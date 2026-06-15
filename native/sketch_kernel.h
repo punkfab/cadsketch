@@ -36,6 +36,54 @@ SK_API int sk_version(void);
 // Returns 1 on success, 0 on failure (n < 3 or degenerate/collinear input).
 SK_API int sk_fit_circle(const double* xy, int n, double* out4);
 
+// ---------------------------------------------------------------------------
+// Constraint solver (M2). A sketch is a set of points (the unknowns) plus
+// geometric constraints among them; sk_solve moves the free points to satisfy
+// the constraints. Lines/arcs in the Dart layer are expressed as point ids, so
+// the kernel only needs points + constraints.
+//
+// IMPLEMENTATION NOTE: the internals are a self-contained Levenberg-Marquardt
+// solver today. This ABI is deliberately the durable contract — planegcs (or
+// any other solver) can replace the internals later without changing it.
+// ---------------------------------------------------------------------------
+
+typedef void* SkSketch;
+
+// Constraint type codes. The point-id arguments used by each (a,b,c,d) are
+// noted; unused ids pass -1 and an unused value passes 0.
+enum SkConstraintType {
+  SK_COINCIDENT = 0,     // a,b      : point a == point b
+  SK_HORIZONTAL = 1,     // a,b      : segment a-b is horizontal (ay == by)
+  SK_VERTICAL = 2,       // a,b      : segment a-b is vertical (ax == bx)
+  SK_PARALLEL = 3,       // a,b,c,d  : segment a-b parallel to c-d
+  SK_PERPENDICULAR = 4,  // a,b,c,d  : segment a-b perpendicular to c-d
+  SK_EQUAL_LENGTH = 5,   // a,b,c,d  : |a-b| == |c-d|
+  SK_DISTANCE = 6,       // a,b,value: |a-b| == value
+};
+
+SK_API SkSketch sk_create(void);
+SK_API void sk_destroy(SkSketch s);
+
+// Adds a point at (x,y); returns its id (>= 0).
+SK_API int sk_add_point(SkSketch s, double x, double y);
+
+// Pins/unpins a point so the solver treats its coords as constants.
+SK_API void sk_fix_point(SkSketch s, int id, int fixed);
+
+// Adds a constraint; returns its id (>= 0) or -1 on invalid arguments.
+SK_API int sk_add_constraint(SkSketch s, int type, int a, int b, int c, int d,
+                             double value);
+
+// Solves the system in place. Returns 0 on convergence, 1 if it did not
+// converge within the iteration budget, -1 on error.
+SK_API int sk_solve(SkSketch s);
+
+// Reads back a (possibly solved) point's coordinates.
+SK_API void sk_point(SkSketch s, int id, double* x, double* y);
+
+// Number of points in the sketch.
+SK_API int sk_point_count(SkSketch s);
+
 // Total-least-squares (orthogonal) line fit.
 //   xy   : input points, interleaved [x0,y0, x1,y1, ...], length 2*n
 //   n    : number of points (>= 2)

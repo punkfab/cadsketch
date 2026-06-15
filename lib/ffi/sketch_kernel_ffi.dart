@@ -18,16 +18,68 @@ typedef _SkFitLineDart = int Function(Pointer<Double>, int, Pointer<Double>);
 typedef _SkFitCircleC = Int32 Function(Pointer<Double>, Int32, Pointer<Double>);
 typedef _SkFitCircleDart = int Function(Pointer<Double>, int, Pointer<Double>);
 
+// Constraint solver. SkSketch is an opaque handle (Pointer<Void>).
+typedef _SkCreateC = Pointer<Void> Function();
+typedef _SkDestroyC = Void Function(Pointer<Void>);
+typedef _SkDestroyDart = void Function(Pointer<Void>);
+typedef _SkAddPointC = Int32 Function(Pointer<Void>, Double, Double);
+typedef _SkAddPointDart = int Function(Pointer<Void>, double, double);
+typedef _SkFixPointC = Void Function(Pointer<Void>, Int32, Int32);
+typedef _SkFixPointDart = void Function(Pointer<Void>, int, int);
+typedef _SkAddConstraintC = Int32 Function(
+    Pointer<Void>, Int32, Int32, Int32, Int32, Int32, Double);
+typedef _SkAddConstraintDart = int Function(
+    Pointer<Void>, int, int, int, int, int, double);
+typedef _SkSolveC = Int32 Function(Pointer<Void>);
+typedef _SkSolveDart = int Function(Pointer<Void>);
+typedef _SkPointC = Void Function(
+    Pointer<Void>, Int32, Pointer<Double>, Pointer<Double>);
+typedef _SkPointDart = void Function(
+    Pointer<Void>, int, Pointer<Double>, Pointer<Double>);
+
+/// Constraint type codes — must match enum SkConstraintType in sketch_kernel.h.
+enum ConstraintType {
+  coincident(0),
+  horizontal(1),
+  vertical(2),
+  parallel(3),
+  perpendicular(4),
+  equalLength(5),
+  distance(6);
+
+  const ConstraintType(this.code);
+  final int code;
+}
+
 class SketchKernel {
   SketchKernel._(DynamicLibrary lib)
       : _version = lib.lookupFunction<_SkVersionC, _SkVersionDart>('sk_version'),
         _fitLine = lib.lookupFunction<_SkFitLineC, _SkFitLineDart>('sk_fit_line'),
         _fitCircle =
-            lib.lookupFunction<_SkFitCircleC, _SkFitCircleDart>('sk_fit_circle');
+            lib.lookupFunction<_SkFitCircleC, _SkFitCircleDart>('sk_fit_circle'),
+        _skCreate = lib.lookupFunction<_SkCreateC, _SkCreateC>('sk_create'),
+        _skDestroy = lib.lookupFunction<_SkDestroyC, _SkDestroyDart>('sk_destroy'),
+        _skAddPoint =
+            lib.lookupFunction<_SkAddPointC, _SkAddPointDart>('sk_add_point'),
+        _skFixPoint =
+            lib.lookupFunction<_SkFixPointC, _SkFixPointDart>('sk_fix_point'),
+        _skAddConstraint = lib.lookupFunction<_SkAddConstraintC,
+            _SkAddConstraintDart>('sk_add_constraint'),
+        _skSolve = lib.lookupFunction<_SkSolveC, _SkSolveDart>('sk_solve'),
+        _skPoint = lib.lookupFunction<_SkPointC, _SkPointDart>('sk_point');
 
   final _SkVersionDart _version;
   final _SkFitLineDart _fitLine;
   final _SkFitCircleDart _fitCircle;
+
+  // Solver entry points, consumed by the Sketch wrapper below.
+  final _SkCreateC _skCreate;
+  final _SkDestroyDart _skDestroy;
+  final _SkAddPointDart _skAddPoint;
+  final _SkFixPointDart _skFixPoint;
+  final _SkAddConstraintDart _skAddConstraint;
+  final _SkSolveDart _skSolve;
+  final _SkPointDart _skPoint;
 
   static SketchKernel? _instance;
   static SketchKernel get instance => _instance ??= SketchKernel._(_open());
@@ -102,5 +154,60 @@ class SketchKernel {
       calloc.free(input);
       calloc.free(output);
     }
+  }
+
+  /// Creates a new constraint-solver sketch. Caller must dispose it.
+  Sketch newSketch() => Sketch._(this, _skCreate());
+}
+
+/// A constraint-solver sketch: add points, constrain them, solve, read back.
+/// Owns a native handle — call [dispose] when done.
+class Sketch {
+  Sketch._(this._k, this._handle);
+
+  final SketchKernel _k;
+  final Pointer<Void> _handle;
+  bool _disposed = false;
+
+  /// Adds a point and returns its id.
+  int addPoint(Offset p) => _k._skAddPoint(_handle, p.dx, p.dy);
+
+  /// Pins a point so the solver treats it as a constant.
+  void fixPoint(int id, {bool fixed = true}) =>
+      _k._skFixPoint(_handle, id, fixed ? 1 : 0);
+
+  int _con(ConstraintType t, int a, int b, int c, int d, double v) =>
+      _k._skAddConstraint(_handle, t.code, a, b, c, d, v);
+
+  int coincident(int a, int b) => _con(ConstraintType.coincident, a, b, -1, -1, 0);
+  int horizontal(int a, int b) => _con(ConstraintType.horizontal, a, b, -1, -1, 0);
+  int vertical(int a, int b) => _con(ConstraintType.vertical, a, b, -1, -1, 0);
+  int parallel(int a, int b, int c, int d) =>
+      _con(ConstraintType.parallel, a, b, c, d, 0);
+  int perpendicular(int a, int b, int c, int d) =>
+      _con(ConstraintType.perpendicular, a, b, c, d, 0);
+  int equalLength(int a, int b, int c, int d) =>
+      _con(ConstraintType.equalLength, a, b, c, d, 0);
+  int distance(int a, int b, double value) =>
+      _con(ConstraintType.distance, a, b, -1, -1, value);
+
+  /// Solves in place. Returns true on convergence.
+  bool solve() => _k._skSolve(_handle) == 0;
+
+  /// Reads back a (possibly solved) point.
+  Offset point(int id) {
+    final buf = calloc<Double>(2);
+    try {
+      _k._skPoint(_handle, id, buf, buf + 1);
+      return Offset(buf[0], buf[1]);
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _k._skDestroy(_handle);
   }
 }

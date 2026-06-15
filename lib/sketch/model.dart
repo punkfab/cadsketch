@@ -274,6 +274,32 @@ class ParametricSketch {
     return null;
   }
 
+  /// Returns the nearest segment whose line is within [tolerance] of [p], or
+  /// null. Lets a tap anywhere along an edge select it (much easier to hit than
+  /// the small dimension label).
+  int? hitTestSegment(Offset p, {double tolerance = 14}) {
+    int? best;
+    var bestDist = tolerance;
+    for (var si = 0; si < segments.length; si++) {
+      final s = segments[si];
+      final d = _distanceToSegment(p, points[s.a], points[s.b]);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = si;
+      }
+    }
+    return best;
+  }
+
+  double _distanceToSegment(Offset p, Offset a, Offset b) {
+    final abx = b.dx - a.dx, aby = b.dy - a.dy;
+    final len2 = abx * abx + aby * aby;
+    if (len2 < 1e-9) return (p - a).distance;
+    var t = ((p.dx - a.dx) * abx + (p.dy - a.dy) * aby) / len2;
+    t = t.clamp(0.0, 1.0);
+    return (p - Offset(a.dx + abx * t, a.dy + aby * t)).distance;
+  }
+
   /// Sets (or clears, with null) a segment's driving length and re-solves.
   void setDrivingLength(int si, double? length) {
     segments[si].drivingLength = length;

@@ -20,9 +20,11 @@ class SketchCanvas extends StatefulWidget {
 
 class _SketchCanvasState extends State<SketchCanvas> {
   List<Offset>? _active;
+  int? _selected; // segment whose dimension dialog is open (highlighted)
 
-  /// Movement below this (logical px) counts as a tap, not a stroke.
-  static const double _tapSlop = 6.0;
+  /// Movement below this (logical px) counts as a tap, not a stroke. Generous
+  /// enough to absorb stylus jitter on a tap.
+  static const double _tapSlop = 10.0;
 
   void _start(Offset p) => setState(() => _active = [p]);
   void _extend(Offset p) => setState(() => _active?.add(p));
@@ -45,29 +47,37 @@ class _SketchCanvasState extends State<SketchCanvas> {
   }
 
   void _handleTap(Offset p) {
-    final si = widget.controller.model.hitTestDimension(p);
+    final m = widget.controller.model;
+    // Prefer the dimension label, but fall back to tapping anywhere on the edge.
+    final si = m.hitTestDimension(p) ?? m.hitTestSegment(p);
     if (si != null) _editDimension(si);
   }
 
   Future<void> _editDimension(int si) async {
-    final model = widget.controller.model;
-    final current = model.segments[si].drivingLength ?? model.measuredLength(si);
-    final action = await showDialog<_DimAction>(
-      context: context,
-      builder: (ctx) => _DimensionDialog(
-        initial: current,
-        parameterNames: widget.controller.parameters.keys.toList(),
-      ),
-    );
-    switch (action) {
-      case _SetLiteral(:final value):
-        if (value > 0) widget.controller.setDrivingLength(si, value);
-      case _BindParam(:final name):
-        if (name.isNotEmpty) widget.controller.bindDimension(si, name);
-      case _MakeDriven():
-        widget.controller.setDrivingLength(si, null);
-      case null:
-        break; // cancelled
+    setState(() => _selected = si);
+    try {
+      final model = widget.controller.model;
+      final current =
+          model.segments[si].drivingLength ?? model.measuredLength(si);
+      final action = await showDialog<_DimAction>(
+        context: context,
+        builder: (ctx) => _DimensionDialog(
+          initial: current,
+          parameterNames: widget.controller.parameters.keys.toList(),
+        ),
+      );
+      switch (action) {
+        case _SetLiteral(:final value):
+          if (value > 0) widget.controller.setDrivingLength(si, value);
+        case _BindParam(:final name):
+          if (name.isNotEmpty) widget.controller.bindDimension(si, name);
+        case _MakeDriven():
+          widget.controller.setDrivingLength(si, null);
+        case null:
+          break; // cancelled
+      }
+    } finally {
+      if (mounted) setState(() => _selected = null);
     }
   }
 
@@ -82,7 +92,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
       child: AnimatedBuilder(
         animation: widget.controller,
         builder: (context, _) => CustomPaint(
-          painter: _SketchPainter(widget.controller, _active),
+          painter: _SketchPainter(widget.controller, _active, _selected),
           size: Size.infinite,
         ),
       ),
@@ -183,10 +193,11 @@ class SketchController extends ChangeNotifier {
 }
 
 class _SketchPainter extends CustomPainter {
-  _SketchPainter(this.controller, this.active);
+  _SketchPainter(this.controller, this.active, this.selected);
 
   final SketchController controller;
   final List<Offset>? active;
+  final int? selected;
 
   static const _glyphColor = Color(0xFFFFC857);
 
@@ -232,9 +243,15 @@ class _SketchPainter extends CustomPainter {
 
     final m = controller.model;
 
-    // Solved segments.
-    for (final s in m.segments) {
-      canvas.drawLine(m.points[s.a], m.points[s.b], line);
+    // Solved segments (selected one highlighted).
+    final highlight = Paint()
+      ..color = const Color(0xFFFFC857)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < m.segments.length; i++) {
+      final s = m.segments[i];
+      canvas.drawLine(m.points[s.a], m.points[s.b], i == selected ? highlight : line);
     }
     // Point nodes; shared points (degree >= 2) get a coincident ring.
     for (var i = 0; i < m.points.length; i++) {

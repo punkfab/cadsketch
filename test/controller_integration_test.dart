@@ -102,4 +102,24 @@ void main() {
     c.setDrivingLength(0, 300); // drive top edge length
     expect(c.model.measuredLength(0), closeTo(300, 2));
   });
+
+  test('a circle radius is settable and resizes the cylinder', () {
+    final c = SketchController();
+    c.addStroke(_circleStroke(const Offset(0, 0), 60, 40));
+    final ci = c.decorations.indexWhere((e) => e is CircleEntity);
+    expect(ci, isNonNegative);
+    c.setCircleRadius(ci, 40);
+    expect((c.decorations[ci] as CircleEntity).radius, 40);
+    expect(_width(c.active), closeTo(80, 2)); // diameter
+  });
+
+  test('a shared parameter drives a circle radius (and its cylinder)', () {
+    final c = SketchController();
+    c.addStroke(_circleStroke(const Offset(0, 0), 60, 40));
+    final ci = c.decorations.indexWhere((e) => e is CircleEntity);
+    c.bindCircleRadius(ci, 'D');
+    c.setParameter('D', 100);
+    expect((c.decorations[ci] as CircleEntity).radius, 100);
+    expect(_width(c.active), closeTo(200, 2));
+  });
 }

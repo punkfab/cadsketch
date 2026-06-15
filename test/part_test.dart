@@ -57,7 +57,7 @@ void main() {
 
   test('a circle decoration extrudes to a cylinder', () {
     final p = Part('cyl');
-    p.decorations.add(const CircleEntity(Offset(0, 0), 30));
+    p.decorations.add(CircleEntity(const Offset(0, 0), 30));
     final s = p.buildSolid();
     expect(s, isNotNull);
     expect(s!.vertices.length, 96); // 48 facets x 2 rings

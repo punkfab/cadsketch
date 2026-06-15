@@ -21,6 +21,7 @@ class SketchCanvas extends StatefulWidget {
 class _SketchCanvasState extends State<SketchCanvas> {
   List<Offset>? _active;
   int? _selected; // segment whose dimension dialog is open (highlighted)
+  int? _selectedCircle; // decoration index of circle being edited
 
   /// Movement below this (logical px) counts as a tap, not a stroke. Generous
   /// enough to absorb stylus jitter on a tap.
@@ -50,7 +51,57 @@ class _SketchCanvasState extends State<SketchCanvas> {
     final m = widget.controller.model;
     // Prefer the dimension label, but fall back to tapping anywhere on the edge.
     final si = m.hitTestDimension(p) ?? m.hitTestSegment(p);
-    if (si != null) _editDimension(si);
+    if (si != null) {
+      _editDimension(si);
+      return;
+    }
+    final ci = _hitTestCircle(p);
+    if (ci != null) _editCircleRadius(ci);
+  }
+
+  /// Decoration index of a circle whose outline is near [p], or null.
+  int? _hitTestCircle(Offset p, {double tolerance = 12}) {
+    final decs = widget.controller.decorations;
+    int? best;
+    var bestDist = tolerance;
+    for (var i = 0; i < decs.length; i++) {
+      final e = decs[i];
+      if (e is CircleEntity) {
+        final d = ((p - e.center).distance - e.radius).abs();
+        if (d <= bestDist) {
+          bestDist = d;
+          best = i;
+        }
+      }
+    }
+    return best;
+  }
+
+  Future<void> _editCircleRadius(int ci) async {
+    setState(() => _selectedCircle = ci);
+    try {
+      final circle = widget.controller.decorations[ci] as CircleEntity;
+      final action = await showDialog<_DimAction>(
+        context: context,
+        builder: (ctx) => _DimensionDialog(
+          initial: circle.radius,
+          parameterNames: widget.controller.parameters.keys.toList(),
+          valueLabel: 'Radius',
+        ),
+      );
+      switch (action) {
+        case _SetLiteral(:final value):
+          if (value > 0) widget.controller.setCircleRadius(ci, value);
+        case _BindParam(:final name):
+          if (name.isNotEmpty) widget.controller.bindCircleRadius(ci, name);
+        case _MakeDriven():
+          widget.controller.setCircleRadius(ci, circle.radius); // just unbind
+        case null:
+          break;
+      }
+    } finally {
+      if (mounted) setState(() => _selectedCircle = null);
+    }
   }
 
   Future<void> _editDimension(int si) async {
@@ -92,7 +143,8 @@ class _SketchCanvasState extends State<SketchCanvas> {
       child: AnimatedBuilder(
         animation: widget.controller,
         builder: (context, _) => CustomPaint(
-          painter: _SketchPainter(widget.controller, _active, _selected),
+          painter: _SketchPainter(
+              widget.controller, _active, _selected, _selectedCircle),
           size: Size.infinite,
         ),
       ),
@@ -153,7 +205,8 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sets a shared parameter's value and re-solves every part that binds it.
+  /// Sets a shared parameter's value and re-solves every part that binds it
+  /// (segment lengths and circle radii alike).
   void setParameter(String name, double value) {
     parameters[name] = value;
     for (final part in parts) {
@@ -165,6 +218,31 @@ class SketchController extends ChangeNotifier {
         }
       }
       if (touched) part.sketch.solve();
+      for (final e in part.decorations) {
+        if (e is CircleEntity && e.radiusParam == name) e.radius = value;
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Sets a circle's radius to a literal value (unbinding any parameter).
+  void setCircleRadius(int decorationIndex, double radius) {
+    final e = decorations[decorationIndex];
+    if (e is CircleEntity) {
+      e.radius = radius;
+      e.radiusParam = null;
+    }
+    notifyListeners();
+  }
+
+  /// Binds a circle's radius to a shared parameter (created from the current
+  /// radius if new).
+  void bindCircleRadius(int decorationIndex, String name) {
+    final e = decorations[decorationIndex];
+    if (e is CircleEntity) {
+      final value = parameters.putIfAbsent(name, () => e.radius);
+      e.radiusParam = name;
+      e.radius = value;
     }
     notifyListeners();
   }
@@ -193,11 +271,12 @@ class SketchController extends ChangeNotifier {
 }
 
 class _SketchPainter extends CustomPainter {
-  _SketchPainter(this.controller, this.active, this.selected);
+  _SketchPainter(this.controller, this.active, this.selected, this.selectedCircle);
 
   final SketchController controller;
   final List<Offset>? active;
   final int? selected;
+  final int? selectedCircle;
 
   static const _glyphColor = Color(0xFFFFC857);
 
@@ -219,16 +298,28 @@ class _SketchPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
+    final circleHighlight = Paint()
+      ..color = _glyphColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+
     // Decorative entities (non-line).
-    for (final e in controller.decorations) {
+    final decs = controller.decorations;
+    for (var di = 0; di < decs.length; di++) {
+      final e = decs[di];
       switch (e) {
         case RawStroke(:final points):
           canvas.drawPath(_polyline(points), raw);
         case LineEntity():
           break; // lines live in the model
         case CircleEntity(:final center, :final radius):
-          canvas.drawCircle(center, radius, line);
+          canvas.drawCircle(
+              center, radius, di == selectedCircle ? circleHighlight : line);
           canvas.drawCircle(center, 3, node);
+          final label = e.radiusParam != null
+              ? '${e.radiusParam}=${radius.toStringAsFixed(0)}'
+              : 'R${radius.toStringAsFixed(0)}';
+          _dimLabel(canvas, center + Offset(0, -radius), label, true);
         case ArcEntity(
             :final center,
             :final radius,
@@ -423,10 +514,15 @@ class _MakeDriven extends _DimAction {}
 /// Edit a dimension: set a literal length, bind it to a shared parameter
 /// (existing or new), or make it a driven (reference) dimension.
 class _DimensionDialog extends StatefulWidget {
-  const _DimensionDialog({required this.initial, required this.parameterNames});
+  const _DimensionDialog({
+    required this.initial,
+    required this.parameterNames,
+    this.valueLabel = 'Length',
+  });
 
   final double initial;
   final List<String> parameterNames;
+  final String valueLabel;
 
   @override
   State<_DimensionDialog> createState() => _DimensionDialogState();
@@ -457,7 +553,7 @@ class _DimensionDialogState extends State<_DimensionDialog> {
             controller: _length,
             autofocus: true,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Length'),
+            decoration: InputDecoration(labelText: widget.valueLabel),
             onSubmitted: (_) => _popLiteral(),
           ),
           const SizedBox(height: 16),

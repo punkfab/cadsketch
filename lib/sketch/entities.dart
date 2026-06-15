@@ -21,11 +21,15 @@ class LineEntity extends SketchEntity {
   final Offset b;
 }
 
-/// A full circle.
+/// A full circle. Radius is mutable so it can be driven by a dimension or a
+/// bound shared parameter (and the extruded cylinder follows).
 class CircleEntity extends SketchEntity {
-  const CircleEntity(this.center, this.radius);
+  CircleEntity(this.center, this.radius, {this.radiusParam});
   final Offset center;
-  final double radius;
+  double radius;
+
+  /// If non-null, the radius is bound to this shared parameter.
+  String? radiusParam;
 }
 
 /// A circular arc. Angles are in radians in screen space (atan2(dy, dx), so

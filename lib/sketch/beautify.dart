@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../ffi/sketch_kernel_ffi.dart';
 import 'entities.dart';
 
@@ -9,10 +11,14 @@ import 'entities.dart';
 //   - a polyline (one or more segments)  -> PolylineResult  (fed to the model)
 //   - a raw scribble                     -> DecorationResult
 //
-// Multi-line detection: a stroke that isn't a single primitive is simplified
-// with Ramer–Douglas–Peucker; the retained vertices are the corners, and each
-// consecutive pair is a segment. So a whole rectangle or L drawn in one stroke
-// is recognized as connected segments (the model merges the shared corners).
+// Key insight (measured): circle-fit residual alone CANNOT separate a freehand
+// oval from a polygon — a square's residual sits between an oval's and a
+// pentagon's. The real discriminator is CORNER SHARPNESS: a polygon has at
+// least one big turn (square 90°, hexagon 60°); a smoothed circle/oval/arc
+// never turns more than ~360/N° at any vertex. So we lightly smooth (kill
+// stroke noise), simplify with RDP, and branch on the MAX turn angle:
+//   max turn small  -> smooth -> fit a circle/arc (oval snaps to circle)
+//   max turn large  -> polyline (the corners are the vertices)
 //
 // Thresholds are tune-by-feel Dart constants (hot reload). Stable fits (line,
 // circle) live in the C++ kernel.
@@ -20,16 +26,23 @@ import 'entities.dart';
 /// Strokes shorter than this (logical px) are treated as taps/noise.
 const double kMinStrokeLength = 12.0;
 
-/// Max RMS radial residual / radius for a stroke to count as "circular".
-const double kCircleResidualTolerance = 0.10;
+/// RDP tolerance as a fraction of the stroke's bounding diagonal (scale-
+/// relative, so a circle yields a consistent vertex count at any size).
+const double kRelativeRdpEpsilon = 0.02;
+const double kMinRdpEpsilon = 1.5;
+
+/// Max turn angle (radians) over all simplified vertices, above which the
+/// stroke is treated as having a corner (polygon) rather than being a smooth
+/// curve. Sits between a smoothed circle's largest turn and a hexagon's 60°.
+const double kCornerThreshold = 0.9; // ~51°
+
+/// Curve branch only sees smooth strokes, so this can be generous — it just
+/// rejects non-circular smooth squiggles. Ovals up to ~70x45 snap to a circle.
+const double kCircleResidualTolerance = 0.22;
 const double kMinRadius = 5.0;
 const double kMaxRadius = 100000.0;
 const double kMinArcSweep = 0.6; // ~34°
 const double kCircleClosureSweep = 5.4; // ~309°
-
-/// RDP simplification tolerance (logical px): how far the stroke may stray from
-/// a straight segment before a corner is introduced. Lower = more corners.
-const double kPolylineTolerance = 4.0;
 
 sealed class StrokeResult {
   const StrokeResult();
@@ -53,9 +66,12 @@ StrokeResult recognizeStroke(List<Offset> points) {
     return DecorationResult(RawStroke(points));
   }
 
-  // 1) Curve test first — must run before RDP, which would shatter an arc into
-  //    a many-sided polygon.
-  if (points.length >= 3) {
+  final eps = math.max(kMinRdpEpsilon, kRelativeRdpEpsilon * _diagonal(points));
+  // Smoothed simplification drives the curve-vs-corner decision (noise-robust);
+  // the raw simplification supplies sharper vertices for the polyline output.
+  final smoothVerts = _rdp(_smooth(points), eps);
+
+  if (_maxTurn(smoothVerts) < kCornerThreshold && points.length >= 3) {
     final c = SketchKernel.instance.fitCircle(points);
     if (c != null &&
         c.radius >= kMinRadius &&
@@ -71,17 +87,57 @@ StrokeResult recognizeStroke(List<Offset> points) {
         return DecorationResult(ArcEntity(c.center, c.radius, start, sweep));
       }
     }
+    // Smooth but not circular (or near-straight) — fall through to polyline.
   }
 
-  // 2) Polyline (covers the single-line case as a 2-vertex chain).
-  final verts = _rdp(points, kPolylineTolerance);
+  return _asPolyline(points, _rdp(points, eps));
+}
+
+/// Builds a polyline result, refining the single-segment case with the kernel's
+/// total-least-squares line fit for cleaner endpoints.
+StrokeResult _asPolyline(List<Offset> points, List<Offset> verts) {
   if (verts.length == 2) {
-    // One clean segment — use the kernel's total-least-squares fit for nicer
-    // endpoints than the raw stroke ends.
     final fit = SketchKernel.instance.fitLine(points);
     return PolylineResult(fit != null ? [fit.a, fit.b] : verts);
   }
   return PolylineResult(verts);
+}
+
+/// Calibration helper: simplified vertex count and largest turn (degrees).
+@visibleForTesting
+({int verts, double maxTurnDeg}) debugCornerStats(List<Offset> points) {
+  final eps = math.max(kMinRdpEpsilon, kRelativeRdpEpsilon * _diagonal(points));
+  final v = _rdp(_smooth(points), eps);
+  return (verts: v.length, maxTurnDeg: _maxTurn(v) * 180 / math.pi);
+}
+
+/// 3-point weighted moving average (endpoints fixed), to suppress stroke noise
+/// before corner analysis.
+List<Offset> _smooth(List<Offset> pts, {int passes = 2}) {
+  var cur = pts;
+  for (var k = 0; k < passes && cur.length >= 3; k++) {
+    final out = <Offset>[cur.first];
+    for (var i = 1; i < cur.length - 1; i++) {
+      out.add((cur[i - 1] + cur[i] * 2.0 + cur[i + 1]) * 0.25);
+    }
+    out.add(cur.last);
+    cur = out;
+  }
+  return cur;
+}
+
+/// Largest unsigned turn angle (radians) over interior vertices.
+double _maxTurn(List<Offset> verts) {
+  var maxT = 0.0;
+  for (var i = 1; i < verts.length - 1; i++) {
+    final a = verts[i] - verts[i - 1];
+    final b = verts[i + 1] - verts[i];
+    final cross = a.dx * b.dy - a.dy * b.dx;
+    final dot = a.dx * b.dx + a.dy * b.dy;
+    final turn = math.atan2(cross.abs(), dot); // unsigned, [0, pi]
+    if (turn > maxT) maxT = turn;
+  }
+  return maxT;
 }
 
 double _pathLength(List<Offset> pts) {
@@ -90,6 +146,18 @@ double _pathLength(List<Offset> pts) {
     len += (pts[i] - pts[i - 1]).distance;
   }
   return len;
+}
+
+double _diagonal(List<Offset> pts) {
+  var minX = pts.first.dx, maxX = pts.first.dx;
+  var minY = pts.first.dy, maxY = pts.first.dy;
+  for (final p in pts) {
+    minX = math.min(minX, p.dx);
+    maxX = math.max(maxX, p.dx);
+    minY = math.min(minY, p.dy);
+    maxY = math.max(maxY, p.dy);
+  }
+  return Offset(maxX - minX, maxY - minY).distance;
 }
 
 /// Ramer–Douglas–Peucker polyline simplification.

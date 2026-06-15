@@ -243,15 +243,40 @@ int sk_solve(SkSketch s) {
   if (nfree == 0) return 0;
 
   std::vector<double> x = sk->px, y = sk->py;
+  const std::vector<double> x0 = sk->px, y0 = sk->py;  // drawn positions
   const double kTol = 1e-7;
+  // Weak pull toward the drawn positions. Resolves under-constrained degrees of
+  // freedom toward minimal movement and prevents free points from running off
+  // to far-away solutions. Small enough not to fight real constraints/dims.
+  const double kReg = 0.005;
   const int kMaxIter = 200;
   double lambda = 1e-3;
 
-  std::vector<double> r = residuals(sk, x, y);
+  // Full residual = constraint residuals + regularization on each free point.
+  auto fullResiduals = [&](const std::vector<double>& X,
+                           const std::vector<double>& Y) {
+    std::vector<double> r = residuals(sk, X, Y);
+    for (int i = 0; i < np; ++i) {
+      if (sk->fixed[i]) continue;
+      r.push_back(kReg * (X[i] - x0[i]));
+      r.push_back(kReg * (Y[i] - y0[i]));
+    }
+    return r;
+  };
+  // Convergence is judged on the constraint residuals only — the regularization
+  // term never reaches zero when a point legitimately moved.
+  auto converged = [&](const std::vector<double>& X,
+                       const std::vector<double>& Y) {
+    const std::vector<double> cr = residuals(sk, X, Y);
+    const int mc = static_cast<int>(cr.size());
+    return std::sqrt(norm2(cr) / (mc ? mc : 1)) < kTol;
+  };
+
+  std::vector<double> r = fullResiduals(x, y);
   const int m = static_cast<int>(r.size());
 
   for (int iter = 0; iter < kMaxIter; ++iter) {
-    if (std::sqrt(norm2(r) / (m ? m : 1)) < kTol) {
+    if (converged(x, y)) {
       sk->px = x;
       sk->py = y;
       return 0;
@@ -267,7 +292,7 @@ int sk_solve(SkSketch s) {
         const double orig = coord[i];
         const double h = 1e-6 * (1.0 + std::fabs(orig));
         coord[i] = orig + h;
-        std::vector<double> rp = residuals(sk, x, y);
+        std::vector<double> rp = fullResiduals(x, y);
         coord[i] = orig;
         for (int j = 0; j < m; ++j)
           J[static_cast<size_t>(j) * nfree + cidx] = (rp[j] - r[j]) / h;
@@ -308,7 +333,7 @@ int sk_solve(SkSketch s) {
         xn[i] += delta[col[2 * i]];
         yn[i] += delta[col[2 * i + 1]];
       }
-      std::vector<double> rn = residuals(sk, xn, yn);
+      std::vector<double> rn = fullResiduals(xn, yn);
       if (norm2(rn) < norm2(r)) {
         x.swap(xn);
         y.swap(yn);
@@ -324,7 +349,7 @@ int sk_solve(SkSketch s) {
 
   sk->px = x;
   sk->py = y;
-  return (std::sqrt(norm2(r) / (m ? m : 1)) < kTol) ? 0 : 1;
+  return converged(x, y) ? 0 : 1;
 }
 
 int sk_fit_line(const double* xy, int n, double* out4) {

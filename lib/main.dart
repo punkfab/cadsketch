@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'ffi/sketch_kernel_ffi.dart';
+import 'ui/assembly_view.dart';
 import 'ui/sketch_canvas.dart';
 import 'ui/solid_view.dart';
 
@@ -85,6 +86,13 @@ class _SketchHomeState extends State<SketchHome> {
             tooltip: 'Extrude closed profile',
             icon: const Icon(Icons.view_in_ar),
             onPressed: _extrude,
+          ),
+          IconButton(
+            tooltip: 'Assembly (mate parts)',
+            icon: const Icon(Icons.account_tree_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => AssemblyView(controller: _controller)),
+            ),
           ),
           IconButton(
             tooltip: 'Clear',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../sketch/part.dart';
 import '../sketch/solid.dart';
+import 'camera.dart';
 import 'sketch_canvas.dart';
 
 /// Pseudo-3D wireframe view of the active part's extrude. Orthographic
@@ -22,7 +23,7 @@ class _SolidViewState extends State<SolidView> {
   double _yaw = 0.6;
   double _pitch = -0.5;
   bool _moved = false;
-  _Camera? _camera; // last camera built this frame, for hit-testing
+  Camera? _camera; // last camera built this frame, for hit-testing
 
   void _orbit(Offset delta) {
     setState(() {
@@ -68,9 +69,10 @@ class _SolidViewState extends State<SolidView> {
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, c) {
-                          final cam = _Camera(
+                          final cam = Camera(
                             size: Size(c.maxWidth, c.maxHeight),
-                            solid: solid,
+                            center: solid.centroid,
+                            radius: solid.boundingRadius,
                             yaw: _yaw,
                             pitch: _pitch,
                           );
@@ -121,7 +123,7 @@ class _SolidViewState extends State<SolidView> {
 }
 
 /// Picks the front-most face whose projected polygon contains [p].
-int? _faceAt(Offset p, Solid solid, _Camera cam) {
+int? _faceAt(Offset p, Solid solid, Camera cam) {
   int? best;
   var bestDepth = -double.infinity;
   for (var f = 0; f < solid.faces.length; f++) {
@@ -149,49 +151,12 @@ bool _pointInPolygon(Offset p, List<Offset> poly) {
   return inside;
 }
 
-/// Orthographic camera: yaw/pitch rotation + auto-fit scale, shared by the
-/// painter and face hit-testing so they agree exactly.
-class _Camera {
-  _Camera({
-    required Size size,
-    required this.solid,
-    required this.yaw,
-    required this.pitch,
-  })  : center = solid.centroid,
-        origin = Offset(size.width / 2, size.height / 2),
-        scale = math.min(size.width, size.height) * 0.38 /
-            math.max(solid.boundingRadius, 1e-6);
-
-  final Solid solid;
-  final double yaw, pitch, scale;
-  final Vec3 center;
-  final Offset origin;
-
-  Vec3 _rotate(Vec3 v) {
-    final cy = math.cos(yaw), sy = math.sin(yaw);
-    final x1 = v.x * cy + v.z * sy;
-    final z1 = -v.x * sy + v.z * cy;
-    final y1 = v.y;
-    final cp = math.cos(pitch), sp = math.sin(pitch);
-    final y2 = y1 * cp - z1 * sp;
-    final z2 = y1 * sp + z1 * cp;
-    return Vec3(x1, y2, z2);
-  }
-
-  Offset project(Vec3 v) {
-    final r = _rotate(v - center);
-    return origin + Offset(r.x * scale, -r.y * scale);
-  }
-
-  double depthOf(Vec3 v) => _rotate(v - center).z;
-}
-
 class _WirePainter extends CustomPainter {
   _WirePainter(this.solid, this.part, this.cam);
 
   final Solid solid;
   final Part part;
-  final _Camera cam;
+  final Camera cam;
 
   @override
   void paint(Canvas canvas, Size size) {

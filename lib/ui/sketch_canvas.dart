@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../sketch/assembly.dart';
 import '../sketch/beautify.dart';
 import '../sketch/entities.dart';
 import '../sketch/model.dart';
@@ -110,6 +111,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
 
 class SketchController extends ChangeNotifier {
   final List<Part> parts = [Part('Part 1')];
+  final List<Mate> mates = [];
   int activeIndex = 0;
 
   Part get active => parts[activeIndex];
@@ -152,6 +154,11 @@ class SketchController extends ChangeNotifier {
 
   void addConnector(int faceIndex) {
     active.connectors.add(MateConnector(faceIndex));
+    notifyListeners();
+  }
+
+  void addMate(int partA, int connectorA, int partB, int connectorB) {
+    mates.add(Mate(partA, connectorA, partB, connectorB));
     notifyListeners();
   }
 

@@ -3,7 +3,7 @@
 #include <cmath>
 #include <vector>
 
-#define SK_ABI_VERSION 3
+#define SK_ABI_VERSION 4
 
 int sk_version(void) { return SK_ABI_VERSION; }
 
@@ -70,13 +70,15 @@ namespace {
 struct Constraint {
   int type;
   int a, b, c, d;
+  int rad;  // radius id, or -1
   double value;
 };
 
 struct Sketch {
-  std::vector<double> px;   // point x
-  std::vector<double> py;   // point y
-  std::vector<char> fixed;  // per-point: coords are constants
+  std::vector<double> px;     // point x
+  std::vector<double> py;     // point y
+  std::vector<char> fixed;    // per-point: coords are constants
+  std::vector<double> radii;  // radius unknowns
   std::vector<Constraint> cons;
 };
 
@@ -84,14 +86,20 @@ inline bool valid_pt(const Sketch* s, int id) {
   return id >= 0 && id < static_cast<int>(s->px.size());
 }
 
+inline bool valid_rad(const Sketch* s, int id) {
+  return id >= 0 && id < static_cast<int>(s->radii.size());
+}
+
 // Number of scalar residuals a constraint contributes.
 int residual_count(int type) {
   return type == SK_COINCIDENT ? 2 : 1;
 }
 
-// Appends this constraint's residuals (evaluated at coords x,y) to out.
+// Appends this constraint's residuals (evaluated at coords x,y, radii) to out.
 void eval_constraint(const Constraint& k, const std::vector<double>& x,
-                     const std::vector<double>& y, std::vector<double>& out) {
+                     const std::vector<double>& y,
+                     const std::vector<double>& radii,
+                     std::vector<double>& out) {
   const double eps = 1e-9;
   switch (k.type) {
     case SK_COINCIDENT:
@@ -133,15 +141,38 @@ void eval_constraint(const Constraint& k, const std::vector<double>& x,
                                            : (abx * cdx + aby * cdy) / (la * lc));
       break;
     }
+    case SK_RADIUS:
+      out.push_back(radii[k.rad] - k.value);
+      break;
+    case SK_POINT_ON_CIRCLE: {
+      // a = point, b = center, rad = radius
+      const double d = std::hypot(x[k.a] - x[k.b], y[k.a] - y[k.b]);
+      out.push_back(d - radii[k.rad]);
+      break;
+    }
+    case SK_TANGENT_LINE: {
+      // a,b = line points, c = center, rad : perpendicular dist == radius
+      const double abx = x[k.b] - x[k.a], aby = y[k.b] - y[k.a];
+      const double len = std::hypot(abx, aby);
+      if (len < eps) {
+        out.push_back(0.0);
+      } else {
+        const double dist =
+            std::fabs((x[k.c] - x[k.a]) * aby - (y[k.c] - y[k.a]) * abx) / len;
+        out.push_back(dist - radii[k.rad]);
+      }
+      break;
+    }
     default:
       break;
   }
 }
 
 std::vector<double> residuals(const Sketch* s, const std::vector<double>& x,
-                              const std::vector<double>& y) {
+                              const std::vector<double>& y,
+                              const std::vector<double>& radii) {
   std::vector<double> r;
-  for (const auto& k : s->cons) eval_constraint(k, x, y, r);
+  for (const auto& k : s->cons) eval_constraint(k, x, y, radii, r);
   return r;
 }
 
@@ -202,6 +233,45 @@ void sk_fix_point(SkSketch s, int id, int fixed) {
   if (valid_pt(sk, id)) sk->fixed[id] = fixed ? 1 : 0;
 }
 
+int sk_add_radius(SkSketch s, double value) {
+  auto* sk = static_cast<Sketch*>(s);
+  sk->radii.push_back(value);
+  return static_cast<int>(sk->radii.size()) - 1;
+}
+
+double sk_radius(SkSketch s, int rad) {
+  auto* sk = static_cast<Sketch*>(s);
+  return valid_rad(sk, rad) ? sk->radii[rad] : 0.0;
+}
+
+int sk_radius_count(SkSketch s) {
+  return static_cast<int>(static_cast<Sketch*>(s)->radii.size());
+}
+
+int sk_constrain_radius(SkSketch s, int rad, double value) {
+  auto* sk = static_cast<Sketch*>(s);
+  if (!valid_rad(sk, rad)) return -1;
+  sk->cons.push_back({SK_RADIUS, -1, -1, -1, -1, rad, value});
+  return static_cast<int>(sk->cons.size()) - 1;
+}
+
+int sk_constrain_point_on_circle(SkSketch s, int point, int center, int rad) {
+  auto* sk = static_cast<Sketch*>(s);
+  if (!valid_pt(sk, point) || !valid_pt(sk, center) || !valid_rad(sk, rad))
+    return -1;
+  sk->cons.push_back({SK_POINT_ON_CIRCLE, point, center, -1, -1, rad, 0});
+  return static_cast<int>(sk->cons.size()) - 1;
+}
+
+int sk_constrain_tangent_line(SkSketch s, int p1, int p2, int center, int rad) {
+  auto* sk = static_cast<Sketch*>(s);
+  if (!valid_pt(sk, p1) || !valid_pt(sk, p2) || !valid_pt(sk, center) ||
+      !valid_rad(sk, rad))
+    return -1;
+  sk->cons.push_back({SK_TANGENT_LINE, p1, p2, center, -1, rad, 0});
+  return static_cast<int>(sk->cons.size()) - 1;
+}
+
 int sk_add_constraint(SkSketch s, int type, int a, int b, int c, int d,
                       double value) {
   auto* sk = static_cast<Sketch*>(s);
@@ -210,7 +280,7 @@ int sk_add_constraint(SkSketch s, int type, int a, int b, int c, int d,
        type == SK_EQUAL_LENGTH) &&
       (!valid_pt(sk, c) || !valid_pt(sk, d)))
     return -1;
-  sk->cons.push_back({type, a, b, c, d, value});
+  sk->cons.push_back({type, a, b, c, d, -1, value});
   return static_cast<int>(sk->cons.size()) - 1;
 }
 
@@ -229,9 +299,11 @@ int sk_point_count(SkSketch s) {
 int sk_solve(SkSketch s) {
   auto* sk = static_cast<Sketch*>(s);
   const int np = static_cast<int>(sk->px.size());
-  if (sk->cons.empty() || np == 0) return 0;
+  const int nr = static_cast<int>(sk->radii.size());
+  if (sk->cons.empty()) return 0;
 
-  // Map each free coordinate to a column index. Fixed points are excluded.
+  // Free-column mapping: free point coordinates first, then all radii (radii
+  // are always solve unknowns so tangency / radius dims can drive geometry).
   std::vector<int> col(2 * np, -1);
   int nfree = 0;
   for (int i = 0; i < np; ++i) {
@@ -240,45 +312,53 @@ int sk_solve(SkSketch s) {
       col[2 * i + 1] = nfree++;
     }
   }
+  std::vector<int> radCol(nr, -1);
+  for (int k = 0; k < nr; ++k) radCol[k] = nfree++;
   if (nfree == 0) return 0;
 
-  std::vector<double> x = sk->px, y = sk->py;
-  const std::vector<double> x0 = sk->px, y0 = sk->py;  // drawn positions
-  const double kTol = 1e-7;
-  // Weak pull toward the drawn positions. Resolves under-constrained degrees of
-  // freedom toward minimal movement and prevents free points from running off
-  // to far-away solutions. Small enough not to fight real constraints/dims.
+  std::vector<double> x = sk->px, y = sk->py, rad = sk->radii;
+  const std::vector<double> x0 = sk->px, y0 = sk->py, rad0 = sk->radii;
+  const double kTol = 1e-6;
+  // Weak pull toward the drawn values. Resolves under-constrained degrees of
+  // freedom toward minimal movement and prevents runaway. Small enough not to
+  // fight real constraints/dims.
   const double kReg = 0.005;
   const int kMaxIter = 200;
   double lambda = 1e-3;
 
-  // Full residual = constraint residuals + regularization on each free point.
+  // Full residual = constraint residuals + regularization on free unknowns.
   auto fullResiduals = [&](const std::vector<double>& X,
-                           const std::vector<double>& Y) {
-    std::vector<double> r = residuals(sk, X, Y);
+                           const std::vector<double>& Y,
+                           const std::vector<double>& R) {
+    std::vector<double> r = residuals(sk, X, Y, R);
     for (int i = 0; i < np; ++i) {
       if (sk->fixed[i]) continue;
       r.push_back(kReg * (X[i] - x0[i]));
       r.push_back(kReg * (Y[i] - y0[i]));
     }
+    for (int k = 0; k < nr; ++k) r.push_back(kReg * (R[k] - rad0[k]));
     return r;
   };
-  // Convergence is judged on the constraint residuals only — the regularization
-  // term never reaches zero when a point legitimately moved.
-  auto converged = [&](const std::vector<double>& X,
-                       const std::vector<double>& Y) {
-    const std::vector<double> cr = residuals(sk, X, Y);
+  // RMS of the constraint residuals (excludes regularization). The early-out
+  // uses a tight tolerance for cleanly-solvable (often linear) systems; when
+  // the LM settles, kAccept decides "satisfied" vs "conflicting" — the weak
+  // regularization biases hard constraints by ~kReg^2, far below kAccept.
+  auto crms = [&](const std::vector<double>& X, const std::vector<double>& Y,
+                  const std::vector<double>& R) {
+    const std::vector<double> cr = residuals(sk, X, Y, R);
     const int mc = static_cast<int>(cr.size());
-    return std::sqrt(norm2(cr) / (mc ? mc : 1)) < kTol;
+    return std::sqrt(norm2(cr) / (mc ? mc : 1));
   };
+  const double kAccept = 0.5;  // px RMS: settled-and-satisfied vs conflicting
 
-  std::vector<double> r = fullResiduals(x, y);
+  std::vector<double> r = fullResiduals(x, y, rad);
   const int m = static_cast<int>(r.size());
 
   for (int iter = 0; iter < kMaxIter; ++iter) {
-    if (converged(x, y)) {
+    if (crms(x, y, rad) < kTol) {
       sk->px = x;
       sk->py = y;
+      sk->radii = rad;
       return 0;
     }
 
@@ -292,11 +372,25 @@ int sk_solve(SkSketch s) {
         const double orig = coord[i];
         const double h = 1e-6 * (1.0 + std::fabs(orig));
         coord[i] = orig + h;
-        std::vector<double> rp = fullResiduals(x, y);
+        std::vector<double> rp = fullResiduals(x, y, rad);
+        coord[i] = orig - h;
+        std::vector<double> rm = fullResiduals(x, y, rad);
         coord[i] = orig;
         for (int j = 0; j < m; ++j)
-          J[static_cast<size_t>(j) * nfree + cidx] = (rp[j] - r[j]) / h;
+          J[static_cast<size_t>(j) * nfree + cidx] = (rp[j] - rm[j]) / (2 * h);
       }
+    }
+    for (int k = 0; k < nr; ++k) {
+      const int cidx = radCol[k];
+      const double orig = rad[k];
+      const double h = 1e-6 * (1.0 + std::fabs(orig));
+      rad[k] = orig + h;
+      std::vector<double> rp = fullResiduals(x, y, rad);
+      rad[k] = orig - h;
+      std::vector<double> rm = fullResiduals(x, y, rad);
+      rad[k] = orig;
+      for (int j = 0; j < m; ++j)
+        J[static_cast<size_t>(j) * nfree + cidx] = (rp[j] - rm[j]) / (2 * h);
     }
 
     // Normal equations: A = JᵀJ + λ·diag(JᵀJ), g = Jᵀr.
@@ -327,16 +421,18 @@ int sk_solve(SkSketch s) {
         lambda *= 4;
         continue;
       }
-      std::vector<double> xn = x, yn = y;
+      std::vector<double> xn = x, yn = y, radn = rad;
       for (int i = 0; i < np; ++i) {
         if (sk->fixed[i]) continue;
         xn[i] += delta[col[2 * i]];
         yn[i] += delta[col[2 * i + 1]];
       }
-      std::vector<double> rn = fullResiduals(xn, yn);
+      for (int k = 0; k < nr; ++k) radn[k] += delta[radCol[k]];
+      std::vector<double> rn = fullResiduals(xn, yn, radn);
       if (norm2(rn) < norm2(r)) {
         x.swap(xn);
         y.swap(yn);
+        rad.swap(radn);
         r.swap(rn);
         lambda = std::fmax(lambda * 0.5, 1e-9);
         stepped = true;
@@ -349,7 +445,10 @@ int sk_solve(SkSketch s) {
 
   sk->px = x;
   sk->py = y;
-  return converged(x, y) ? 0 : 1;
+  sk->radii = rad;
+  // Settled: success if constraints are essentially satisfied, else report the
+  // system as unsatisfiable (e.g. conflicting/over-constrained).
+  return crms(x, y, rad) < kAccept ? 0 : 1;
 }
 
 int sk_fit_line(const double* xy, int n, double* out4) {

@@ -52,13 +52,16 @@ typedef void* SkSketch;
 // Constraint type codes. The point-id arguments used by each (a,b,c,d) are
 // noted; unused ids pass -1 and an unused value passes 0.
 enum SkConstraintType {
-  SK_COINCIDENT = 0,     // a,b      : point a == point b
-  SK_HORIZONTAL = 1,     // a,b      : segment a-b is horizontal (ay == by)
-  SK_VERTICAL = 2,       // a,b      : segment a-b is vertical (ax == bx)
-  SK_PARALLEL = 3,       // a,b,c,d  : segment a-b parallel to c-d
-  SK_PERPENDICULAR = 4,  // a,b,c,d  : segment a-b perpendicular to c-d
-  SK_EQUAL_LENGTH = 5,   // a,b,c,d  : |a-b| == |c-d|
-  SK_DISTANCE = 6,       // a,b,value: |a-b| == value
+  SK_COINCIDENT = 0,      // a,b      : point a == point b
+  SK_HORIZONTAL = 1,      // a,b      : segment a-b is horizontal (ay == by)
+  SK_VERTICAL = 2,        // a,b      : segment a-b is vertical (ax == bx)
+  SK_PARALLEL = 3,        // a,b,c,d  : segment a-b parallel to c-d
+  SK_PERPENDICULAR = 4,   // a,b,c,d  : segment a-b perpendicular to c-d
+  SK_EQUAL_LENGTH = 5,    // a,b,c,d  : |a-b| == |c-d|
+  SK_DISTANCE = 6,        // a,b,value: |a-b| == value
+  SK_RADIUS = 7,          // rad,value: radius[rad] == value
+  SK_POINT_ON_CIRCLE = 8, // a=point, b=center, rad : |a-b| == radius[rad]
+  SK_TANGENT_LINE = 9,    // a,b=line, c=center, rad : dist(center,line) == radius
 };
 
 SK_API SkSketch sk_create(void);
@@ -70,9 +73,24 @@ SK_API int sk_add_point(SkSketch s, double x, double y);
 // Pins/unpins a point so the solver treats its coords as constants.
 SK_API void sk_fix_point(SkSketch s, int id, int fixed);
 
-// Adds a constraint; returns its id (>= 0) or -1 on invalid arguments.
+// Adds a radius scalar unknown (initial value); returns its id (>= 0). Radii
+// are solve variables, so tangency and radius dimensions can drive geometry.
+SK_API int sk_add_radius(SkSketch s, double value);
+
+// Reads back a (possibly solved) radius.
+SK_API double sk_radius(SkSketch s, int rad);
+
+// Number of radii.
+SK_API int sk_radius_count(SkSketch s);
+
+// Adds a point/segment-only constraint; returns its id (>= 0) or -1.
 SK_API int sk_add_constraint(SkSketch s, int type, int a, int b, int c, int d,
                              double value);
+
+// Radius constraints. Each returns the constraint id (>= 0) or -1.
+SK_API int sk_constrain_radius(SkSketch s, int rad, double value);
+SK_API int sk_constrain_point_on_circle(SkSketch s, int point, int center, int rad);
+SK_API int sk_constrain_tangent_line(SkSketch s, int p1, int p2, int center, int rad);
 
 // Solves the system in place. Returns 0 on convergence, 1 if it did not
 // converge within the iteration budget, -1 on error.

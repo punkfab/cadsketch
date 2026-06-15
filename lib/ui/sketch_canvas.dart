@@ -38,7 +38,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
       return;
     }
     if (stroke.length >= 2) {
-      widget.controller.addEntity(beautifyStroke(stroke));
+      widget.controller.addStroke(stroke);
     }
   }
 
@@ -111,11 +111,13 @@ class SketchController extends ChangeNotifier {
   final ParametricSketch model = ParametricSketch();
   final List<SketchEntity> decorations = [];
 
-  void addEntity(SketchEntity e) {
-    if (e is LineEntity) {
-      model.addLine(e.a, e.b);
-    } else {
-      decorations.add(e);
+  void addStroke(List<Offset> points) {
+    final result = recognizeStroke(points);
+    switch (result) {
+      case PolylineResult(:final vertices):
+        model.addPolyline(vertices);
+      case DecorationResult(:final entity):
+        decorations.add(entity);
     }
     notifyListeners();
   }

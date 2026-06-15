@@ -4,52 +4,57 @@ import 'dart:ui' show Offset;
 import '../ffi/sketch_kernel_ffi.dart';
 import 'entities.dart';
 
-// Beautification = classify a raw stroke, then snap it to a clean primitive.
+// Stroke recognition. A single stroke becomes one of:
+//   - a curve  (circle / arc)            -> DecorationResult
+//   - a polyline (one or more segments)  -> PolylineResult  (fed to the model)
+//   - a raw scribble                     -> DecorationResult
 //
-// The CLASSIFICATION thresholds live here in Dart on purpose: they're the
-// tune-by-feel knobs you'll adjust constantly while finding the right feel, and
-// hot reload makes that instant. The stable numeric FITS (least squares line,
-// Kåsa circle) live in the C++ kernel, because that's durable math the iOS
-// build reuses verbatim.
+// Multi-line detection: a stroke that isn't a single primitive is simplified
+// with Ramer–Douglas–Peucker; the retained vertices are the corners, and each
+// consecutive pair is a segment. So a whole rectangle or L drawn in one stroke
+// is recognized as connected segments (the model merges the shared corners).
 //
-// Pipeline: line test first (a straight stroke also fits a huge circle, so line
-// wins ties), then circle/arc, else keep the raw stroke.
-
-/// Max allowed perpendicular deviation from the endpoint chord, as a fraction
-/// of the chord length, for a stroke to count as "a line". Tune to taste.
-const double kLineStraightnessTolerance = 0.06;
+// Thresholds are tune-by-feel Dart constants (hot reload). Stable fits (line,
+// circle) live in the C++ kernel.
 
 /// Strokes shorter than this (logical px) are treated as taps/noise.
 const double kMinStrokeLength = 12.0;
 
 /// Max RMS radial residual / radius for a stroke to count as "circular".
 const double kCircleResidualTolerance = 0.10;
-
-/// Plausible radius bounds (logical px) — rejects near-degenerate fits.
 const double kMinRadius = 5.0;
 const double kMaxRadius = 100000.0;
-
-/// Below this swept angle (radians) a "circular" stroke is too shallow to be a
-/// meaningful arc — the line test should own it; otherwise we keep it raw.
 const double kMinArcSweep = 0.6; // ~34°
-
-/// At/above this swept angle we treat the stroke as a closed full circle.
 const double kCircleClosureSweep = 5.4; // ~309°
 
-SketchEntity beautifyStroke(List<Offset> points) {
-  if (points.length < 2) return RawStroke(points);
+/// RDP simplification tolerance (logical px): how far the stroke may stray from
+/// a straight segment before a corner is introduced. Lower = more corners.
+const double kPolylineTolerance = 4.0;
 
-  final chord = (points.last - points.first).distance;
-  final pathLen = _pathLength(points);
-  if (pathLen < kMinStrokeLength) return RawStroke(points);
+sealed class StrokeResult {
+  const StrokeResult();
+}
 
-  // 1) Line — only meaningful when the stroke actually spans some distance.
-  if (chord >= kMinStrokeLength && _isLine(points, chord)) {
-    final fit = SketchKernel.instance.fitLine(points);
-    if (fit != null) return LineEntity(fit.a, fit.b);
+/// A non-parametric entity (circle, arc, raw stroke) — kept as decoration.
+class DecorationResult extends StrokeResult {
+  const DecorationResult(this.entity);
+  final SketchEntity entity;
+}
+
+/// An ordered vertex chain; consecutive vertices form line segments. Length 2
+/// is a single line; 3+ is a multi-segment polyline.
+class PolylineResult extends StrokeResult {
+  const PolylineResult(this.vertices);
+  final List<Offset> vertices;
+}
+
+StrokeResult recognizeStroke(List<Offset> points) {
+  if (points.length < 2 || _pathLength(points) < kMinStrokeLength) {
+    return DecorationResult(RawStroke(points));
   }
 
-  // 2) Circle / arc.
+  // 1) Curve test first — must run before RDP, which would shatter an arc into
+  //    a many-sided polygon.
   if (points.length >= 3) {
     final c = SketchKernel.instance.fitCircle(points);
     if (c != null &&
@@ -59,16 +64,24 @@ SketchEntity beautifyStroke(List<Offset> points) {
       final sweep = _sweptAngle(points, c.center);
       final mag = sweep.abs();
       if (mag >= kCircleClosureSweep) {
-        return CircleEntity(c.center, c.radius);
+        return DecorationResult(CircleEntity(c.center, c.radius));
       }
       if (mag >= kMinArcSweep) {
         final start = _angleTo(c.center, points.first);
-        return ArcEntity(c.center, c.radius, start, sweep);
+        return DecorationResult(ArcEntity(c.center, c.radius, start, sweep));
       }
     }
   }
 
-  return RawStroke(points);
+  // 2) Polyline (covers the single-line case as a 2-vertex chain).
+  final verts = _rdp(points, kPolylineTolerance);
+  if (verts.length == 2) {
+    // One clean segment — use the kernel's total-least-squares fit for nicer
+    // endpoints than the raw stroke ends.
+    final fit = SketchKernel.instance.fitLine(points);
+    return PolylineResult(fit != null ? [fit.a, fit.b] : verts);
+  }
+  return PolylineResult(verts);
 }
 
 double _pathLength(List<Offset> pts) {
@@ -79,27 +92,38 @@ double _pathLength(List<Offset> pts) {
   return len;
 }
 
-/// A stroke is a line if every point stays close to the straight chord between
-/// its endpoints (max perpendicular distance / chord length below tolerance).
-bool _isLine(List<Offset> points, double chord) {
-  final a = points.first;
-  final b = points.last;
-  final abx = b.dx - a.dx;
-  final aby = b.dy - a.dy;
-  var maxDev = 0.0;
-  for (final p in points) {
-    final dev = ((p.dx - a.dx) * aby - (p.dy - a.dy) * abx).abs() / chord;
-    if (dev > maxDev) maxDev = dev;
+/// Ramer–Douglas–Peucker polyline simplification.
+List<Offset> _rdp(List<Offset> pts, double epsilon) {
+  if (pts.length < 3) return List.of(pts);
+  var maxDist = 0.0;
+  var index = 0;
+  for (var i = 1; i < pts.length - 1; i++) {
+    final d = _perpDistance(pts[i], pts.first, pts.last);
+    if (d > maxDist) {
+      maxDist = d;
+      index = i;
+    }
   }
-  return maxDev / chord <= kLineStraightnessTolerance;
+  if (maxDist > epsilon) {
+    final left = _rdp(pts.sublist(0, index + 1), epsilon);
+    final right = _rdp(pts.sublist(index), epsilon);
+    return [...left.sublist(0, left.length - 1), ...right];
+  }
+  return [pts.first, pts.last];
+}
+
+/// Perpendicular distance from p to the segment a-b (or to a if a==b).
+double _perpDistance(Offset p, Offset a, Offset b) {
+  final dx = b.dx - a.dx;
+  final dy = b.dy - a.dy;
+  final len = math.sqrt(dx * dx + dy * dy);
+  if (len < 1e-9) return (p - a).distance;
+  return ((p.dx - a.dx) * dy - (p.dy - a.dy) * dx).abs() / len;
 }
 
 double _angleTo(Offset center, Offset p) =>
     math.atan2(p.dy - center.dy, p.dx - center.dx);
 
-/// Signed total angle swept around [center] walking the stroke, accumulating
-/// per-step deltas wrapped to (-pi, pi]. Sign gives CW/CCW; magnitude gives arc
-/// extent (and detects closure when it approaches 2*pi).
 double _sweptAngle(List<Offset> points, Offset center) {
   var total = 0.0;
   var prev = _angleTo(center, points.first);

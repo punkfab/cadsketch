@@ -57,13 +57,31 @@ class ParametricSketch {
   /// Adds a drawn line, inferring constraints against existing geometry, then
   /// re-solves the whole sketch in place.
   void addLine(Offset a, Offset b) {
+    _addSegment(a, b);
+    solve();
+  }
+
+  /// Adds a chain of connected segments (one stroke recognized as a polyline),
+  /// inferring constraints for each, then solving once. Shared corners merge
+  /// naturally because consecutive vertices coincide.
+  void addPolyline(List<Offset> vertices) {
+    var added = false;
+    for (var i = 0; i + 1 < vertices.length; i++) {
+      if (_addSegment(vertices[i], vertices[i + 1]) != null) added = true;
+    }
+    if (added) solve();
+  }
+
+  /// Adds one segment with inference but no solve. Returns its index, or null
+  /// if it collapsed to zero length after merging.
+  int? _addSegment(Offset a, Offset b) {
     final ia = _mergeOrAdd(a);
     final ib = _mergeOrAdd(b);
-    if (ia == ib) return; // zero-length after merge
+    if (ia == ib) return null;
     final si = segments.length;
     segments.add(Segment(ia, ib));
     _infer(si);
-    solve();
+    return si;
   }
 
   int _mergeOrAdd(Offset p) {

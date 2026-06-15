@@ -228,6 +228,10 @@ class _SketchPainter extends CustomPainter {
                 _offsetMid(m, c.segments[1])) /
             2;
         _badgePaint(canvas, at, _drawParallel);
+      case ConstraintKind.equalLength:
+        // Place an "=" badge near each of the two segments so the pairing reads.
+        _badgePaint(canvas, _offsetMid(m, c.segments[0]), _drawEqual);
+        _badgePaint(canvas, _offsetMid(m, c.segments[1]), _drawEqual);
     }
   }
 
@@ -284,6 +288,15 @@ class _SketchPainter extends CustomPainter {
       ..strokeWidth = 1.5;
     canvas.drawLine(c + const Offset(-3, -5), c + const Offset(-3, 5), p);
     canvas.drawLine(c + const Offset(3, -5), c + const Offset(3, 5), p);
+  }
+
+  void _drawEqual(Canvas canvas, Offset c) {
+    final p = Paint()
+      ..color = _glyphColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawLine(c + const Offset(-5, -2), c + const Offset(5, -2), p);
+    canvas.drawLine(c + const Offset(-5, 2), c + const Offset(5, 2), p);
   }
 
   static const _drivingColor = Color(0xFF4DD0E1); // accent — drives geometry

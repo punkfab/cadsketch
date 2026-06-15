@@ -10,7 +10,7 @@ import '../ffi/sketch_kernel_ffi.dart';
 // Inference thresholds are tune-by-feel Dart constants on purpose (hot reload).
 // The solve itself is delegated to the C++ kernel via FFI.
 
-enum ConstraintKind { horizontal, vertical, perpendicular, parallel }
+enum ConstraintKind { horizontal, vertical, perpendicular, parallel, equalLength }
 
 class Segment {
   Segment(this.a, this.b);
@@ -43,6 +43,10 @@ class ParametricSketch {
 
   /// How close to 0°/90° two segments must be to infer parallel/perpendicular.
   static double relationAngleTolerance = 0.14;
+
+  /// Two parallel segments whose lengths differ by less than this fraction are
+  /// inferred equal-length (so opposite rectangle sides track together).
+  static double equalLengthTolerance = 0.18;
 
   void clear() {
     points.clear();
@@ -86,16 +90,34 @@ class ParametricSketch {
 
     for (var ti = 0; ti < segments.length; ti++) {
       if (ti == si) continue;
-      // If both segments are already axis-locked, their relationship is implied
-      // — don't clutter with a redundant perpendicular/parallel glyph.
-      if (sAxis && _hasAxis(ti)) continue;
       final acute = _acuteBetween(si, ti); // [0, pi/2]
-      if ((acute - math.pi / 2).abs() < relationAngleTolerance) {
+      final isParallel = acute < relationAngleTolerance;
+      final isPerp = (acute - math.pi / 2).abs() < relationAngleTolerance;
+
+      // Equal-length: parallel + similar length. Runs even when both segments
+      // are axis-locked, since that's exactly the opposite-rectangle-sides case
+      // we want to link so a width dimension propagates.
+      if (isParallel && _lengthsSimilar(si, ti)) {
+        constraints.add(SketchConstraint(ConstraintKind.equalLength, [si, ti]));
+      }
+
+      // Perpendicular/parallel glyphs are redundant when both segments are
+      // already axis-locked (the H/V constraints imply the relationship).
+      if (sAxis && _hasAxis(ti)) continue;
+      if (isPerp) {
         constraints.add(SketchConstraint(ConstraintKind.perpendicular, [si, ti]));
-      } else if (acute < relationAngleTolerance) {
+      } else if (isParallel) {
         constraints.add(SketchConstraint(ConstraintKind.parallel, [si, ti]));
       }
     }
+  }
+
+  bool _lengthsSimilar(int si, int ti) {
+    final a = measuredLength(si);
+    final b = measuredLength(ti);
+    final m = math.max(a, b);
+    if (m < 1e-6) return false;
+    return (a - b).abs() / m <= equalLengthTolerance;
   }
 
   bool _hasAxis(int seg) => constraints.any((c) =>
@@ -129,6 +151,10 @@ class ParametricSketch {
             final p = segments[c.segments[0]];
             final q = segments[c.segments[1]];
             s.parallel(p.a, p.b, q.a, q.b);
+          case ConstraintKind.equalLength:
+            final p = segments[c.segments[0]];
+            final q = segments[c.segments[1]];
+            s.equalLength(p.a, p.b, q.a, q.b);
         }
       }
       // Driving length dimensions become distance constraints.

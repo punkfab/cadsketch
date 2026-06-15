@@ -95,6 +95,14 @@ class _SketchHomeState extends State<SketchHome> {
             ),
           ),
           IconButton(
+            tooltip: 'Shared parameters',
+            icon: const Icon(Icons.tune),
+            onPressed: () => showDialog(
+              context: context,
+              builder: (_) => _ParametersDialog(controller: _controller),
+            ),
+          ),
+          IconButton(
             tooltip: 'Clear',
             icon: const Icon(Icons.delete_outline),
             onPressed: _controller.clear,
@@ -157,6 +165,105 @@ class _PartsBar extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Lists shared parameters; editing a value re-solves every part that binds it
+/// (the parametric-assembly payoff: one edit drives many parts).
+class _ParametersDialog extends StatelessWidget {
+  const _ParametersDialog({required this.controller});
+
+  final SketchController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Shared parameters'),
+      content: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          final names = controller.parameters.keys.toList()..sort();
+          if (names.isEmpty) {
+            return const SizedBox(
+              width: 320,
+              child: Text(
+                'No parameters yet. Tap a dimension on the canvas and bind it to '
+                'a new parameter name to create one.',
+                style: TextStyle(color: Colors.white70),
+              ),
+            );
+          }
+          return SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final name in names)
+                  _ParamRow(
+                    name: name,
+                    value: controller.parameters[name]!,
+                    onChanged: (v) => controller.setParameter(name, v),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ParamRow extends StatefulWidget {
+  const _ParamRow({required this.name, required this.value, required this.onChanged});
+
+  final String name;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_ParamRow> createState() => _ParamRowState();
+}
+
+class _ParamRowState extends State<_ParamRow> {
+  late final _field = TextEditingController(text: widget.value.toStringAsFixed(1));
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  void _submit(String s) {
+    final v = double.tryParse(s);
+    if (v != null && v > 0) widget.onChanged(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(widget.name)),
+          SizedBox(
+            width: 110,
+            child: TextField(
+              controller: _field,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              textInputAction: TextInputAction.done,
+              onSubmitted: _submit,
+              decoration: const InputDecoration(isDense: true),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -21,6 +21,10 @@ class Segment {
   /// reference length is shown instead). When set, it becomes a distance
   /// constraint that drives the geometry.
   double? drivingLength;
+
+  /// If non-null, this dimension is bound to a shared assembly parameter of
+  /// this name; the controller keeps [drivingLength] in sync with it.
+  String? lengthParam;
 }
 
 class SketchConstraint {

@@ -52,41 +52,22 @@ class _SketchCanvasState extends State<SketchCanvas> {
   Future<void> _editDimension(int si) async {
     final model = widget.controller.model;
     final current = model.segments[si].drivingLength ?? model.measuredLength(si);
-    final field = TextEditingController(text: current.toStringAsFixed(1));
-    final result = await showDialog<({bool clear, double? value})>(
+    final action = await showDialog<_DimAction>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Dimension'),
-        content: TextField(
-          controller: field,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Length'),
-          onSubmitted: (_) => Navigator.pop(
-              ctx, (clear: false, value: double.tryParse(field.text))),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, (clear: true, value: null)),
-            child: const Text('Make driven'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, null),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-                ctx, (clear: false, value: double.tryParse(field.text))),
-            child: const Text('Set'),
-          ),
-        ],
+      builder: (ctx) => _DimensionDialog(
+        initial: current,
+        parameterNames: widget.controller.parameters.keys.toList(),
       ),
     );
-    if (result == null) return; // cancelled
-    if (result.clear) {
-      widget.controller.setDrivingLength(si, null);
-    } else if (result.value != null && result.value! > 0) {
-      widget.controller.setDrivingLength(si, result.value);
+    switch (action) {
+      case _SetLiteral(:final value):
+        if (value > 0) widget.controller.setDrivingLength(si, value);
+      case _BindParam(:final name):
+        if (name.isNotEmpty) widget.controller.bindDimension(si, name);
+      case _MakeDriven():
+        widget.controller.setDrivingLength(si, null);
+      case null:
+        break; // cancelled
     }
   }
 
@@ -112,6 +93,11 @@ class _SketchCanvasState extends State<SketchCanvas> {
 class SketchController extends ChangeNotifier {
   final List<Part> parts = [Part('Part 1')];
   final List<Mate> mates = [];
+
+  /// Shared assembly parameters: name -> value. Dimensions across any part can
+  /// bind to these so one edit drives many parts.
+  final Map<String, double> parameters = {};
+
   int activeIndex = 0;
 
   Part get active => parts[activeIndex];
@@ -143,7 +129,33 @@ class SketchController extends ChangeNotifier {
   }
 
   void setDrivingLength(int si, double? length) {
+    model.segments[si].lengthParam = null; // a literal edit unbinds the param
     model.setDrivingLength(si, length);
+    notifyListeners();
+  }
+
+  /// Binds the active part's segment [si] to a shared parameter [name],
+  /// creating the parameter (seeded from the current length) if it's new.
+  void bindDimension(int si, String name) {
+    final value = parameters.putIfAbsent(name, () => model.measuredLength(si));
+    model.segments[si].lengthParam = name;
+    model.setDrivingLength(si, value);
+    notifyListeners();
+  }
+
+  /// Sets a shared parameter's value and re-solves every part that binds it.
+  void setParameter(String name, double value) {
+    parameters[name] = value;
+    for (final part in parts) {
+      var touched = false;
+      for (final seg in part.sketch.segments) {
+        if (seg.lengthParam == name) {
+          seg.drivingLength = value;
+          touched = true;
+        }
+      }
+      if (touched) part.sketch.solve();
+    }
     notifyListeners();
   }
 
@@ -236,12 +248,15 @@ class _SketchPainter extends CustomPainter {
     }
     // Dimension labels: driving (accent, editable) vs driven (gray reference).
     for (var si = 0; si < m.segments.length; si++) {
-      final driving = m.segments[si].drivingLength;
+      final seg = m.segments[si];
+      final driving = seg.drivingLength;
       final isDriving = driving != null;
       final value = isDriving ? driving : m.measuredLength(si);
-      final label = isDriving
-          ? value.toStringAsFixed(1)
-          : '(${value.toStringAsFixed(0)})';
+      final label = seg.lengthParam != null
+          ? '${seg.lengthParam}=${value.toStringAsFixed(0)}'
+          : isDriving
+              ? value.toStringAsFixed(1)
+              : '(${value.toStringAsFixed(0)})';
       _dimLabel(canvas, m.dimAnchor(si), label, isDriving);
     }
 
@@ -370,4 +385,117 @@ class _SketchPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SketchPainter old) => true;
+}
+
+// --- Dimension editing dialog ---
+
+sealed class _DimAction {}
+
+class _SetLiteral extends _DimAction {
+  _SetLiteral(this.value);
+  final double value;
+}
+
+class _BindParam extends _DimAction {
+  _BindParam(this.name);
+  final String name;
+}
+
+class _MakeDriven extends _DimAction {}
+
+/// Edit a dimension: set a literal length, bind it to a shared parameter
+/// (existing or new), or make it a driven (reference) dimension.
+class _DimensionDialog extends StatefulWidget {
+  const _DimensionDialog({required this.initial, required this.parameterNames});
+
+  final double initial;
+  final List<String> parameterNames;
+
+  @override
+  State<_DimensionDialog> createState() => _DimensionDialogState();
+}
+
+class _DimensionDialogState extends State<_DimensionDialog> {
+  late final _length =
+      TextEditingController(text: widget.initial.toStringAsFixed(1));
+  final _newParam = TextEditingController();
+  String? _selectedParam;
+
+  @override
+  void dispose() {
+    _length.dispose();
+    _newParam.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Dimension'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _length,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Length'),
+            onSubmitted: (_) => _popLiteral(),
+          ),
+          const SizedBox(height: 16),
+          const Text('Bind to shared parameter',
+              style: TextStyle(fontSize: 12, color: Colors.white70)),
+          if (widget.parameterNames.isNotEmpty)
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final name in widget.parameterNames)
+                  ChoiceChip(
+                    label: Text(name),
+                    selected: _selectedParam == name,
+                    onSelected: (_) => setState(() => _selectedParam = name),
+                  ),
+              ],
+            ),
+          TextField(
+            controller: _newParam,
+            decoration: const InputDecoration(labelText: 'or new parameter name'),
+            onChanged: (_) => setState(() => _selectedParam = null),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, _MakeDriven()),
+          child: const Text('Make driven'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _bindName == null
+              ? null
+              : () => Navigator.pop(context, _BindParam(_bindName!)),
+          child: const Text('Bind'),
+        ),
+        FilledButton(
+          onPressed: _popLiteral,
+          child: const Text('Set'),
+        ),
+      ],
+    );
+  }
+
+  String? get _bindName {
+    final typed = _newParam.text.trim();
+    if (typed.isNotEmpty) return typed;
+    return _selectedParam;
+  }
+
+  void _popLiteral() {
+    final v = double.tryParse(_length.text);
+    if (v != null) Navigator.pop(context, _SetLiteral(v));
+  }
 }

@@ -15,6 +15,10 @@ class Vec3 {
   Vec3 operator -(Vec3 o) => Vec3(x - o.x, y - o.y, z - o.z);
   Vec3 operator *(double s) => Vec3(x * s, y * s, z * s);
   double get length => math.sqrt(x * x + y * y + z * z);
+  Vec3 get normalized {
+    final l = length;
+    return l < 1e-12 ? this : this * (1 / l);
+  }
 }
 
 class Solid {
@@ -39,6 +43,29 @@ class Solid {
       r = math.max(r, (v - c).length);
     }
     return r;
+  }
+
+  Vec3 faceCentroid(int f) {
+    final ring = faces[f];
+    var c = const Vec3(0, 0, 0);
+    for (final i in ring) {
+      c = c + vertices[i];
+    }
+    return c * (1.0 / ring.length);
+  }
+
+  /// Outward face normal via Newell's method (robust for non-planar rings).
+  Vec3 faceNormal(int f) {
+    final ring = faces[f];
+    var nx = 0.0, ny = 0.0, nz = 0.0;
+    for (var i = 0; i < ring.length; i++) {
+      final cur = vertices[ring[i]];
+      final nxt = vertices[ring[(i + 1) % ring.length]];
+      nx += (cur.y - nxt.y) * (cur.z + nxt.z);
+      ny += (cur.z - nxt.z) * (cur.x + nxt.x);
+      nz += (cur.x - nxt.x) * (cur.y + nxt.y);
+    }
+    return Vec3(nx, ny, nz).normalized;
   }
 }
 

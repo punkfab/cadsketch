@@ -56,8 +56,9 @@ flutter test             # pure-Dart classification tests
   re-solves live
 - **M3.5** ✅ extrude a closed profile to a prism + rotatable orthographic
   wireframe view (pseudo-3D in CustomPaint; real shaded 3D deferred to native)
-- **M4** multiple parts on one canvas + mate connectors + shared parameters
-  (assembly UX)
+- **M4** (in progress) multiple parts on one canvas (parts bar to switch/add) +
+  face-tap mate connectors; circles extrude to cylinders. Next: mates between
+  connectors + shared parameters across parts
 - **M5** AI assistant: structured sketch JSON → Claude → tool-call suggestions
 
 > Solver note: the kernel currently uses a self-written Levenberg-Marquardt

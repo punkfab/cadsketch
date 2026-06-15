@@ -51,16 +51,14 @@ class _SketchHomeState extends State<SketchHome> {
   }
 
   void _extrude() {
-    final loop = _controller.model.closedLoop();
-    if (loop == null) {
+    if (_controller.active.buildSolid() == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Draw a single closed profile (e.g. a box) to extrude'),
       ));
       return;
     }
-    final profile = [for (final i in loop) _controller.model.points[i]];
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => SolidView(profile: profile)),
+      MaterialPageRoute(builder: (_) => SolidView(controller: _controller)),
     );
   }
 
@@ -95,9 +93,62 @@ class _SketchHomeState extends State<SketchHome> {
           ),
         ],
       ),
-      body: Container(
-        color: const Color(0xFF101418),
-        child: SketchCanvas(controller: _controller),
+      body: Column(
+        children: [
+          _PartsBar(controller: _controller),
+          Expanded(
+            child: Container(
+              color: const Color(0xFF101418),
+              child: SketchCanvas(controller: _controller),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Horizontal bar of part chips with an add button — switch the active part
+/// without leaving the canvas (the "jump between parts" UX).
+class _PartsBar extends StatelessWidget {
+  const _PartsBar({required this.controller});
+
+  final SketchController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) => Container(
+        height: 48,
+        color: const Color(0xFF161C22),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: controller.parts.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (context, i) {
+                  final selected = i == controller.activeIndex;
+                  return Center(
+                    child: ChoiceChip(
+                      label: Text(controller.parts[i].name),
+                      selected: selected,
+                      onSelected: (_) => controller.setActive(i),
+                    ),
+                  );
+                },
+              ),
+            ),
+            IconButton(
+              tooltip: 'Add part',
+              icon: const Icon(Icons.add),
+              onPressed: controller.addPart,
+            ),
+          ],
+        ),
       ),
     );
   }

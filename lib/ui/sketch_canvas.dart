@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../sketch/beautify.dart';
 import '../sketch/entities.dart';
 import '../sketch/model.dart';
+import '../sketch/part.dart';
 
 /// Captures strokes; lines feed the parametric model (inferred + solved),
 /// everything else is kept as a decorative entity. Constraints are rendered
@@ -108,8 +109,25 @@ class _SketchCanvasState extends State<SketchCanvas> {
 }
 
 class SketchController extends ChangeNotifier {
-  final ParametricSketch model = ParametricSketch();
-  final List<SketchEntity> decorations = [];
+  final List<Part> parts = [Part('Part 1')];
+  int activeIndex = 0;
+
+  Part get active => parts[activeIndex];
+  // Kept for the painter / canvas, which edit the active part.
+  ParametricSketch get model => active.sketch;
+  List<SketchEntity> get decorations => active.decorations;
+
+  void addPart() {
+    parts.add(Part('Part ${parts.length + 1}'));
+    activeIndex = parts.length - 1;
+    notifyListeners();
+  }
+
+  void setActive(int index) {
+    if (index < 0 || index >= parts.length || index == activeIndex) return;
+    activeIndex = index;
+    notifyListeners();
+  }
 
   void addStroke(List<Offset> points) {
     final result = recognizeStroke(points);
@@ -127,9 +145,20 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setDepth(double depth) {
+    active.depth = depth;
+    notifyListeners();
+  }
+
+  void addConnector(int faceIndex) {
+    active.connectors.add(MateConnector(faceIndex));
+    notifyListeners();
+  }
+
   void clear() {
     model.clear();
     decorations.clear();
+    active.connectors.clear();
     notifyListeners();
   }
 }

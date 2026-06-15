@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'ffi/sketch_kernel_ffi.dart';
 import 'ui/sketch_canvas.dart';
+import 'ui/solid_view.dart';
 
 void main() {
   runApp(const AiSketcherApp());
@@ -49,6 +50,20 @@ class _SketchHomeState extends State<SketchHome> {
     super.dispose();
   }
 
+  void _extrude() {
+    final loop = _controller.model.closedLoop();
+    if (loop == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Draw a single closed profile (e.g. a box) to extrude'),
+      ));
+      return;
+    }
+    final profile = [for (final i in loop) _controller.model.points[i]];
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => SolidView(profile: profile)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ok = _kernelStatus.startsWith('kernel v');
@@ -67,6 +82,11 @@ class _SketchHomeState extends State<SketchHome> {
                 ),
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Extrude closed profile',
+            icon: const Icon(Icons.view_in_ar),
+            onPressed: _extrude,
           ),
           IconButton(
             tooltip: 'Clear',

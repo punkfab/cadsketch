@@ -226,6 +226,32 @@ class ParametricSketch {
     return n;
   }
 
+  /// Returns the ordered point indices of a single closed profile loop, or
+  /// null if the sketch isn't one simple closed polygon (the only case we
+  /// extrude for now). Every point must have degree exactly 2.
+  List<int>? closedLoop() {
+    if (points.isEmpty || segments.length != points.length) return null;
+    final adj = List.generate(points.length, (_) => <int>[]);
+    for (final s in segments) {
+      adj[s.a].add(s.b);
+      adj[s.b].add(s.a);
+    }
+    if (adj.any((n) => n.length != 2)) return null;
+
+    final loop = <int>[];
+    var prev = -1;
+    var cur = 0;
+    do {
+      loop.add(cur);
+      final nbrs = adj[cur];
+      final next = nbrs[0] != prev ? nbrs[0] : nbrs[1];
+      prev = cur;
+      cur = next;
+      if (loop.length > points.length) return null; // not a single clean loop
+    } while (cur != 0);
+    return loop.length == points.length ? loop : null;
+  }
+
   double measuredLength(int si) {
     final s = segments[si];
     return (points[s.b] - points[s.a]).distance;

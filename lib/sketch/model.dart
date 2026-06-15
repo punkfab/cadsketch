@@ -16,6 +16,11 @@ class Segment {
   Segment(this.a, this.b);
   int a; // point index
   int b; // point index
+
+  /// Driving length dimension. null => no driving dim (a measured/driven
+  /// reference length is shown instead). When set, it becomes a distance
+  /// constraint that drives the geometry.
+  double? drivingLength;
 }
 
 class SketchConstraint {
@@ -126,6 +131,11 @@ class ParametricSketch {
             s.parallel(p.a, p.b, q.a, q.b);
         }
       }
+      // Driving length dimensions become distance constraints.
+      for (final seg in segments) {
+        final len = seg.drivingLength;
+        if (len != null) s.distance(seg.a, seg.b, len);
+      }
       s.solve();
       for (var i = 0; i < points.length; i++) {
         points[i] = s.point(i);
@@ -170,5 +180,29 @@ class ParametricSketch {
       if (s.a == pointIndex || s.b == pointIndex) n++;
     }
     return n;
+  }
+
+  double measuredLength(int si) {
+    final s = segments[si];
+    return (points[s.b] - points[s.a]).distance;
+  }
+
+  /// Anchor for a segment's dimension label — midpoint pushed to the opposite
+  /// side from the constraint glyphs so they don't overlap.
+  Offset dimAnchor(int si) => segMid(si) - segNormal(si) * 16;
+
+  /// Returns the segment whose dimension label is within [radius] of [p], or
+  /// null. Used to route taps to dimension editing.
+  int? hitTestDimension(Offset p, {double radius = 18}) {
+    for (var si = 0; si < segments.length; si++) {
+      if ((dimAnchor(si) - p).distance <= radius) return si;
+    }
+    return null;
+  }
+
+  /// Sets (or clears, with null) a segment's driving length and re-solves.
+  void setDrivingLength(int si, double? length) {
+    segments[si].drivingLength = length;
+    solve();
   }
 }

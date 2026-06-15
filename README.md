@@ -49,8 +49,16 @@ flutter test             # pure-Dart classification tests
 
 - **M0** ✅ canvas + stroke capture + render
 - **M1** ✅ beautify straight strokes → clean lines (FFI round-trip proven)
-- **M2** arcs/circles + planegcs constraint solver behind the same C ABI; infer
-  + solve constraints on a closed profile
-- **M3** driving vs driven dimensions; edit a dimension → geometry updates live
+- **M2** ✅ arc/circle recognition; constraint solver (self-written LM) behind
+  the C ABI; inference (merge endpoints, H/V, perpendicular/parallel) + solve;
+  CAD-style constraint glyphs
+- **M3** ✅ driving vs driven dimensions; tap a length, type a value, geometry
+  re-solves live
 - **M4** multiple parts on one canvas + shared parameters (assembly UX)
 - **M5** AI assistant: structured sketch JSON → Claude → tool-call suggestions
+
+> Solver note: the kernel currently uses a self-written Levenberg-Marquardt
+> solver, not planegcs — same C ABI, so planegcs can drop in later (see
+> `native/sketch_kernel.cpp`). Equal-length is supported by the solver but not
+> auto-inferred yet, so dimensioning one side of a closed rectangle resolves as
+> a least-squares compromise rather than a parametric width.

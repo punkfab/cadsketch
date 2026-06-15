@@ -19,15 +19,73 @@ class SketchCanvas extends StatefulWidget {
 class _SketchCanvasState extends State<SketchCanvas> {
   List<Offset>? _active;
 
+  /// Movement below this (logical px) counts as a tap, not a stroke.
+  static const double _tapSlop = 6.0;
+
   void _start(Offset p) => setState(() => _active = [p]);
   void _extend(Offset p) => setState(() => _active?.add(p));
 
   void _end() {
     final stroke = _active;
-    if (stroke != null && stroke.length >= 2) {
+    setState(() => _active = null);
+    if (stroke == null || stroke.isEmpty) return;
+
+    // Tap (little movement) → maybe edit a dimension; otherwise it's a stroke.
+    final extent =
+        stroke.fold(0.0, (m, p) => (p - stroke.first).distance.clamp(m, 1e9));
+    if (extent < _tapSlop) {
+      _handleTap(stroke.first);
+      return;
+    }
+    if (stroke.length >= 2) {
       widget.controller.addEntity(beautifyStroke(stroke));
     }
-    setState(() => _active = null);
+  }
+
+  void _handleTap(Offset p) {
+    final si = widget.controller.model.hitTestDimension(p);
+    if (si != null) _editDimension(si);
+  }
+
+  Future<void> _editDimension(int si) async {
+    final model = widget.controller.model;
+    final current = model.segments[si].drivingLength ?? model.measuredLength(si);
+    final field = TextEditingController(text: current.toStringAsFixed(1));
+    final result = await showDialog<({bool clear, double? value})>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Dimension'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Length'),
+          onSubmitted: (_) => Navigator.pop(
+              ctx, (clear: false, value: double.tryParse(field.text))),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, (clear: true, value: null)),
+            child: const Text('Make driven'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+                ctx, (clear: false, value: double.tryParse(field.text))),
+            child: const Text('Set'),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return; // cancelled
+    if (result.clear) {
+      widget.controller.setDrivingLength(si, null);
+    } else if (result.value != null && result.value! > 0) {
+      widget.controller.setDrivingLength(si, result.value);
+    }
   }
 
   @override
@@ -59,6 +117,11 @@ class SketchController extends ChangeNotifier {
     } else {
       decorations.add(e);
     }
+    notifyListeners();
+  }
+
+  void setDrivingLength(int si, double? length) {
+    model.setDrivingLength(si, length);
     notifyListeners();
   }
 
@@ -132,6 +195,16 @@ class _SketchPainter extends CustomPainter {
     // Constraint glyphs.
     for (final c in m.constraints) {
       _drawConstraint(canvas, m, c);
+    }
+    // Dimension labels: driving (accent, editable) vs driven (gray reference).
+    for (var si = 0; si < m.segments.length; si++) {
+      final driving = m.segments[si].drivingLength;
+      final isDriving = driving != null;
+      final value = isDriving ? driving : m.measuredLength(si);
+      final label = isDriving
+          ? value.toStringAsFixed(1)
+          : '(${value.toStringAsFixed(0)})';
+      _dimLabel(canvas, m.dimAnchor(si), label, isDriving);
     }
 
     // In-progress stroke.
@@ -211,6 +284,29 @@ class _SketchPainter extends CustomPainter {
       ..strokeWidth = 1.5;
     canvas.drawLine(c + const Offset(-3, -5), c + const Offset(-3, 5), p);
     canvas.drawLine(c + const Offset(3, -5), c + const Offset(3, 5), p);
+  }
+
+  static const _drivingColor = Color(0xFF4DD0E1); // accent — drives geometry
+  static const _drivenColor = Color(0xFF90A4AE); // gray — reference only
+
+  void _dimLabel(Canvas canvas, Offset center, String text, bool driving) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: driving ? _drivingColor : _drivenColor,
+          fontSize: 12,
+          fontWeight: driving ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+            center: center, width: tp.width + 8, height: tp.height + 4),
+        const Radius.circular(3));
+    canvas.drawRRect(rect, Paint()..color = const Color(0xCC1A2026));
+    tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
   }
 
   Path _polyline(List<Offset> pts) {

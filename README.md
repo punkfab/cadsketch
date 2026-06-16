@@ -60,6 +60,9 @@ flutter test             # pure-Dart classification tests
   extrude to cylinders; **fasten mates** assemble parts in a shared 3D scene
   (closed-form connector alignment); **shared parameters** across parts — bind a
   dimension to a named parameter, edit it once, every bound part re-solves
+- **Import** ✅ STL/OBJ meshes import as parts (pure-Dart) — render, take mate
+  connectors, assemble. True STEP needs OCCT (native build); convert STEP→STL
+  meanwhile. Arcs solve in closed line+arc contours with auto-tangency.
 - **M5** AI assistant: structured sketch JSON → Claude → tool-call suggestions
 
 > Solver note: the kernel currently uses a self-written Levenberg-Marquardt

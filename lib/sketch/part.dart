@@ -37,10 +37,15 @@ class Part {
 
   final List<MateConnector> connectors = [];
 
-  /// Builds the extruded solid from a closed profile, or null if there isn't
-  /// one. A polygon loop extrudes to a prism; a circle extrudes to a cylinder
-  /// (tessellated into a profile).
+  /// An imported mesh (STL/OBJ). When set, this is the part's geometry directly
+  /// (no sketch/extrude). True STEP import arrives via OCCT in the native build,
+  /// flowing into this same field.
+  Solid? importedSolid;
+
+  /// Builds the part's solid: an imported mesh if present, otherwise the
+  /// extruded closed profile (prism) or a circle (cylinder).
   Solid? buildSolid() {
+    if (importedSolid != null) return importedSolid;
     // Closed contour (lines and/or arcs, arcs tessellated).
     final profile = sketch.closedProfile();
     if (profile != null && profile.length >= 3) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'ffi/sketch_kernel_ffi.dart';
+import 'sketch/mesh_import.dart';
 import 'ui/assembly_view.dart';
 import 'ui/sketch_canvas.dart';
 import 'ui/solid_view.dart';
@@ -51,6 +52,27 @@ class _SketchHomeState extends State<SketchHome> {
     super.dispose();
   }
 
+  Future<void> _import() async {
+    final path = await showDialog<String>(
+      context: context,
+      builder: (_) => const _ImportPathDialog(),
+    );
+    if (path == null || path.trim().isEmpty) return;
+    try {
+      final solid = importMeshFile(path.trim());
+      final name = path.trim().split('/').last;
+      _controller.importSolid(name, solid);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => SolidView(controller: _controller)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Import failed: $e')));
+    }
+  }
+
   void _extrude() {
     if (_controller.active.buildSolid() == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -81,6 +103,11 @@ class _SketchHomeState extends State<SketchHome> {
                 ),
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Import mesh (STL/OBJ) as a part',
+            icon: const Icon(Icons.upload_file),
+            onPressed: _import,
           ),
           IconButton(
             tooltip: 'Extrude closed profile',
@@ -265,6 +292,60 @@ class _ParamRowState extends State<_ParamRow> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Prompts for a mesh file path to import (.stl / .obj). A native file picker
+/// is a later refinement; typing/pasting a path keeps the harness dependency-free.
+class _ImportPathDialog extends StatefulWidget {
+  const _ImportPathDialog();
+
+  @override
+  State<_ImportPathDialog> createState() => _ImportPathDialogState();
+}
+
+class _ImportPathDialogState extends State<_ImportPathDialog> {
+  final _field = TextEditingController();
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Import mesh'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _field,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Path to .stl or .obj',
+              hintText: '/home/you/part.stl',
+            ),
+            onSubmitted: (v) => Navigator.pop(context, v),
+          ),
+          const SizedBox(height: 8),
+          const Text('STEP? Convert to STL/OBJ (FreeCAD) for now.',
+              style: TextStyle(fontSize: 11, color: Colors.white54)),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _field.text),
+          child: const Text('Import'),
+        ),
+      ],
     );
   }
 }

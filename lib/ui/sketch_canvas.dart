@@ -7,6 +7,7 @@ import '../sketch/beautify.dart';
 import '../sketch/entities.dart';
 import '../sketch/model.dart';
 import '../sketch/part.dart';
+import '../sketch/solid.dart';
 
 /// Captures strokes; lines feed the parametric model (inferred + solved),
 /// everything else is kept as a decorative entity. Constraints are rendered
@@ -171,6 +172,13 @@ class SketchController extends ChangeNotifier {
 
   void addPart() {
     parts.add(Part('Part ${parts.length + 1}'));
+    activeIndex = parts.length - 1;
+    notifyListeners();
+  }
+
+  /// Adds an imported-mesh part and makes it active.
+  void importSolid(String name, Solid solid) {
+    parts.add(Part(name)..importedSolid = solid);
     activeIndex = parts.length - 1;
     notifyListeners();
   }

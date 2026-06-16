@@ -10,7 +10,14 @@ import '../ffi/sketch_kernel_ffi.dart';
 // Inference thresholds are tune-by-feel Dart constants on purpose (hot reload).
 // The solve itself is delegated to the C++ kernel via FFI.
 
-enum ConstraintKind { horizontal, vertical, perpendicular, parallel, equalLength }
+enum ConstraintKind {
+  horizontal,
+  vertical,
+  perpendicular,
+  parallel,
+  equalLength,
+  tangent, // segments[0] = line, segments[1] = arc
+}
 
 /// Arc data attached to a segment whose endpoints (a, b) lie on a circle.
 /// Center/radius are solver unknowns (point-on-circle), updated on solve.
@@ -61,6 +68,10 @@ class ParametricSketch {
   /// How close to 0°/90° two segments must be to infer parallel/perpendicular.
   static double relationAngleTolerance = 0.14;
 
+  /// How close to perpendicular (line vs radius at the shared point) a line and
+  /// an adjacent arc must be to infer tangency. ~17°.
+  static double tangentAngleTolerance = 0.3;
+
   /// Two parallel segments whose lengths differ by less than this fraction are
   /// inferred equal-length (so opposite rectangle sides track together).
   static double equalLengthTolerance = 0.18;
@@ -98,6 +109,7 @@ class ParametricSketch {
     final si = segments.length;
     segments.add(Segment(ia, ib));
     _infer(si);
+    _inferTangency(si);
     return si;
   }
 
@@ -108,7 +120,9 @@ class ParametricSketch {
     final ia = _mergeOrAdd(start);
     final ib = _mergeOrAdd(end);
     if (ia == ib) return;
+    final si = segments.length;
     segments.add(Segment(ia, ib)..arc = ArcData(center, radius, sweep));
+    _inferTangency(si);
     solve();
   }
 
@@ -172,6 +186,48 @@ class ParametricSketch {
           c.kind == ConstraintKind.vertical) &&
       c.segments.first == seg);
 
+  /// Infers tangency between segment [si] and any adjacent segment of the other
+  /// kind (one line, one arc) sharing a point, when the line is ~perpendicular
+  /// to the arc's radius there (i.e. tangent to the circle).
+  void _inferTangency(int si) {
+    final s = segments[si];
+    for (var ti = 0; ti < segments.length; ti++) {
+      if (ti == si) continue;
+      final t = segments[ti];
+      if (s.isArc == t.isArc) continue; // need exactly one line + one arc
+      final int lineIdx = s.isArc ? ti : si;
+      final int arcIdx = s.isArc ? si : ti;
+      final line = segments[lineIdx];
+      final arc = segments[arcIdx];
+
+      final shared = _sharedPoint(line, arc);
+      if (shared == null) continue;
+      if (_hasTangent(lineIdx, arcIdx)) continue;
+
+      final radial = points[shared] - arc.arc!.center;
+      final other = line.a == shared ? line.b : line.a;
+      final dir = points[other] - points[shared];
+      if (radial.distance < 1e-6 || dir.distance < 1e-6) continue;
+      final cosA = (radial.dx * dir.dx + radial.dy * dir.dy) /
+          (radial.distance * dir.distance);
+      final angle = math.acos(cosA.clamp(-1.0, 1.0));
+      if ((angle - math.pi / 2).abs() < tangentAngleTolerance) {
+        constraints.add(SketchConstraint(ConstraintKind.tangent, [lineIdx, arcIdx]));
+      }
+    }
+  }
+
+  int? _sharedPoint(Segment a, Segment b) {
+    if (a.a == b.a || a.a == b.b) return a.a;
+    if (a.b == b.a || a.b == b.b) return a.b;
+    return null;
+  }
+
+  bool _hasTangent(int lineIdx, int arcIdx) => constraints.any((c) =>
+      c.kind == ConstraintKind.tangent &&
+      c.segments[0] == lineIdx &&
+      c.segments[1] == arcIdx);
+
   /// Builds a kernel sketch from the model, solves, and reads positions back.
   /// LM only accepts downhill steps, so results are never worse than as-drawn.
   void solve() {
@@ -202,6 +258,8 @@ class ParametricSketch {
             final p = segments[c.segments[0]];
             final q = segments[c.segments[1]];
             s.equalLength(p.a, p.b, q.a, q.b);
+          case ConstraintKind.tangent:
+            break; // applied after arc centers/radii are created (below)
         }
       }
       // Driving length dimensions become distance constraints (lines only).
@@ -210,25 +268,32 @@ class ParametricSketch {
         if (len != null && !seg.isArc) s.distance(seg.a, seg.b, len);
       }
       // Arcs: each gets a center point + radius unknown, with both endpoints
-      // constrained onto the circle.
-      final arcMeta = <(Segment, int, int)>[];
-      for (final seg in segments) {
-        final arc = seg.arc;
+      // constrained onto the circle. Keyed by segment index for tangents.
+      final arcMeta = <int, ({int center, int rad})>{};
+      for (var si = 0; si < segments.length; si++) {
+        final arc = segments[si].arc;
         if (arc == null) continue;
         final center = s.addPoint(arc.center);
         final rad = s.addRadius(arc.radius);
-        s.pointOnCircle(seg.a, center, rad);
-        s.pointOnCircle(seg.b, center, rad);
-        arcMeta.add((seg, center, rad));
+        s.pointOnCircle(segments[si].a, center, rad);
+        s.pointOnCircle(segments[si].b, center, rad);
+        arcMeta[si] = (center: center, rad: rad);
+      }
+      // Tangency: line tangent to the adjacent arc's circle.
+      for (final c in constraints) {
+        if (c.kind != ConstraintKind.tangent) continue;
+        final line = segments[c.segments[0]];
+        final meta = arcMeta[c.segments[1]];
+        if (meta != null) s.tangentLine(line.a, line.b, meta.center, meta.rad);
       }
       s.solve();
       for (var i = 0; i < points.length; i++) {
         points[i] = s.point(i);
       }
-      for (final (seg, center, rad) in arcMeta) {
-        seg.arc!
-          ..center = s.point(center)
-          ..radius = s.radius(rad);
+      for (final entry in arcMeta.entries) {
+        segments[entry.key].arc!
+          ..center = s.point(entry.value.center)
+          ..radius = s.radius(entry.value.rad);
       }
     } finally {
       s.dispose();

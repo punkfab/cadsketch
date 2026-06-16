@@ -406,6 +406,11 @@ class _SketchPainter extends CustomPainter {
         // Place an "=" badge near each of the two segments so the pairing reads.
         _badgePaint(canvas, _offsetMid(m, c.segments[0]), _drawEqual);
         _badgePaint(canvas, _offsetMid(m, c.segments[1]), _drawEqual);
+      case ConstraintKind.tangent:
+        final line = m.segments[c.segments[0]];
+        final arc = m.segments[c.segments[1]];
+        final shared = (line.a == arc.a || line.a == arc.b) ? line.a : line.b;
+        _badgeText(canvas, m.points[shared] + const Offset(0, -16), 'T');
     }
   }
 

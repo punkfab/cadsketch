@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../sketch/assembly.dart';
@@ -184,6 +186,8 @@ class SketchController extends ChangeNotifier {
     switch (result) {
       case PolylineResult(:final vertices):
         model.addPolyline(vertices);
+      case ArcResult(:final start, :final end, :final center, :final radius, :final sweep):
+        model.addArc(start, end, center, radius, sweep);
       case DecorationResult(:final entity):
         decorations.add(entity);
     }
@@ -342,7 +346,16 @@ class _SketchPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     for (var i = 0; i < m.segments.length; i++) {
       final s = m.segments[i];
-      canvas.drawLine(m.points[s.a], m.points[s.b], i == selected ? highlight : line);
+      final paint = i == selected ? highlight : line;
+      final arc = s.arc;
+      if (arc != null) {
+        final start = m.points[s.a];
+        final a0 = math.atan2(start.dy - arc.center.dy, start.dx - arc.center.dx);
+        canvas.drawArc(Rect.fromCircle(center: arc.center, radius: arc.radius),
+            a0, arc.sweep, false, paint);
+      } else {
+        canvas.drawLine(m.points[s.a], m.points[s.b], paint);
+      }
     }
     // Point nodes; shared points (degree >= 2) get a coincident ring.
     for (var i = 0; i < m.points.length; i++) {

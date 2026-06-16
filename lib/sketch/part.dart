@@ -41,9 +41,9 @@ class Part {
   /// one. A polygon loop extrudes to a prism; a circle extrudes to a cylinder
   /// (tessellated into a profile).
   Solid? buildSolid() {
-    final loop = sketch.closedLoop();
-    if (loop != null) {
-      final profile = <Offset>[for (final i in loop) sketch.points[i]];
+    // Closed contour (lines and/or arcs, arcs tessellated).
+    final profile = sketch.closedProfile();
+    if (profile != null && profile.length >= 3) {
       return extrudeProfile(profile, depth);
     }
     final circle = _lastCircle();

@@ -12,6 +12,15 @@ import '../ffi/sketch_kernel_ffi.dart';
 
 enum ConstraintKind { horizontal, vertical, perpendicular, parallel, equalLength }
 
+/// Arc data attached to a segment whose endpoints (a, b) lie on a circle.
+/// Center/radius are solver unknowns (point-on-circle), updated on solve.
+class ArcData {
+  ArcData(this.center, this.radius, this.sweep);
+  Offset center;
+  double radius;
+  double sweep; // signed, from segment.a -> segment.b
+}
+
 class Segment {
   Segment(this.a, this.b);
   int a; // point index
@@ -25,6 +34,10 @@ class Segment {
   /// If non-null, this dimension is bound to a shared assembly parameter of
   /// this name; the controller keeps [drivingLength] in sync with it.
   String? lengthParam;
+
+  /// If non-null, this segment is a circular arc (not a straight line).
+  ArcData? arc;
+  bool get isArc => arc != null;
 }
 
 class SketchConstraint {
@@ -88,6 +101,17 @@ class ParametricSketch {
     return si;
   }
 
+  /// Adds a circular arc as a segment whose endpoints merge with existing
+  /// geometry (so it joins a contour), then re-solves. No line inference runs
+  /// on arcs; their endpoints are held on the circle by the solver.
+  void addArc(Offset start, Offset end, Offset center, double radius, double sweep) {
+    final ia = _mergeOrAdd(start);
+    final ib = _mergeOrAdd(end);
+    if (ia == ib) return;
+    segments.add(Segment(ia, ib)..arc = ArcData(center, radius, sweep));
+    solve();
+  }
+
   int _mergeOrAdd(Offset p) {
     for (var i = 0; i < points.length; i++) {
       if ((points[i] - p).distance <= mergeTolerance) return i;
@@ -97,6 +121,7 @@ class ParametricSketch {
   }
 
   void _infer(int si) {
+    if (segments[si].isArc) return; // arcs don't get line constraints
     final ang = _segAngle(si); // undirected, [0, pi)
     final isH = ang < axisAngleTolerance || ang > math.pi - axisAngleTolerance;
     final isV = (ang - math.pi / 2).abs() < axisAngleTolerance;
@@ -111,7 +136,7 @@ class ParametricSketch {
     }
 
     for (var ti = 0; ti < segments.length; ti++) {
-      if (ti == si) continue;
+      if (ti == si || segments[ti].isArc) continue;
       final acute = _acuteBetween(si, ti); // [0, pi/2]
       final isParallel = acute < relationAngleTolerance;
       final isPerp = (acute - math.pi / 2).abs() < relationAngleTolerance;
@@ -179,14 +204,31 @@ class ParametricSketch {
             s.equalLength(p.a, p.b, q.a, q.b);
         }
       }
-      // Driving length dimensions become distance constraints.
+      // Driving length dimensions become distance constraints (lines only).
       for (final seg in segments) {
         final len = seg.drivingLength;
-        if (len != null) s.distance(seg.a, seg.b, len);
+        if (len != null && !seg.isArc) s.distance(seg.a, seg.b, len);
+      }
+      // Arcs: each gets a center point + radius unknown, with both endpoints
+      // constrained onto the circle.
+      final arcMeta = <(Segment, int, int)>[];
+      for (final seg in segments) {
+        final arc = seg.arc;
+        if (arc == null) continue;
+        final center = s.addPoint(arc.center);
+        final rad = s.addRadius(arc.radius);
+        s.pointOnCircle(seg.a, center, rad);
+        s.pointOnCircle(seg.b, center, rad);
+        arcMeta.add((seg, center, rad));
       }
       s.solve();
       for (var i = 0; i < points.length; i++) {
         points[i] = s.point(i);
+      }
+      for (final (seg, center, rad) in arcMeta) {
+        seg.arc!
+          ..center = s.point(center)
+          ..radius = s.radius(rad);
       }
     } finally {
       s.dispose();
@@ -254,6 +296,48 @@ class ParametricSketch {
       if (loop.length > points.length) return null; // not a single clean loop
     } while (cur != 0);
     return loop.length == points.length ? loop : null;
+  }
+
+  /// Ordered boundary of the closed contour as points, with arc edges
+  /// tessellated. Null if there's no single closed loop. Used for extrusion.
+  List<Offset>? closedProfile() {
+    final loop = closedLoop();
+    if (loop == null) return null;
+    final profile = <Offset>[];
+    for (var i = 0; i < loop.length; i++) {
+      final ai = loop[i];
+      final bi = loop[(i + 1) % loop.length];
+      final seg = _segmentBetween(ai, bi);
+      if (seg != null && seg.isArc) {
+        // Traverse the arc in the loop's direction (negate sweep if reversed).
+        final forward = seg.a == ai;
+        final sweep = forward ? seg.arc!.sweep : -seg.arc!.sweep;
+        profile.addAll(_tessellateArc(points[ai], seg.arc!.center, seg.arc!.radius, sweep));
+      } else {
+        profile.add(points[ai]);
+      }
+    }
+    return profile;
+  }
+
+  Segment? _segmentBetween(int a, int b) {
+    for (final s in segments) {
+      if ((s.a == a && s.b == b) || (s.a == b && s.b == a)) return s;
+    }
+    return null;
+  }
+
+  /// Points along an arc from [start] (on the circle) sweeping [sweep] radians,
+  /// excluding the end point (the next edge contributes it).
+  List<Offset> _tessellateArc(Offset start, Offset center, double radius, double sweep) {
+    final n = math.max(2, (sweep.abs() / 0.25).ceil());
+    final a0 = math.atan2(start.dy - center.dy, start.dx - center.dx);
+    return [
+      for (var i = 0; i < n; i++)
+        center +
+            Offset(math.cos(a0 + sweep * i / n), math.sin(a0 + sweep * i / n)) *
+                radius,
+    ];
   }
 
   double measuredLength(int si) {

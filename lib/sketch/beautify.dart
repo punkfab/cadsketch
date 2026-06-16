@@ -61,6 +61,17 @@ class PolylineResult extends StrokeResult {
   final List<Offset> vertices;
 }
 
+/// An open circular arc that joins a contour (its endpoints merge with adjacent
+/// geometry and it participates in the solver via point-on-circle).
+class ArcResult extends StrokeResult {
+  const ArcResult(this.start, this.end, this.center, this.radius, this.sweep);
+  final Offset start;
+  final Offset end;
+  final Offset center;
+  final double radius;
+  final double sweep; // signed, start -> end
+}
+
 StrokeResult recognizeStroke(List<Offset> points) {
   if (points.length < 2 || _pathLength(points) < kMinStrokeLength) {
     return DecorationResult(RawStroke(points));
@@ -83,8 +94,8 @@ StrokeResult recognizeStroke(List<Offset> points) {
         return DecorationResult(CircleEntity(c.center, c.radius));
       }
       if (mag >= kMinArcSweep) {
-        final start = _angleTo(c.center, points.first);
-        return DecorationResult(ArcEntity(c.center, c.radius, start, sweep));
+        // Open arc -> a model entity that can join a line+arc contour.
+        return ArcResult(points.first, points.last, c.center, c.radius, sweep);
       }
     }
     // Smooth but not circular (or near-straight) — fall through to polyline.

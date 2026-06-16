@@ -44,12 +44,9 @@ void main() {
     expect((r as DecorationResult).entity, isA<CircleEntity>());
   });
 
-  test('half and quarter arcs -> ArcEntity', () {
-    expect(_entity<ArcEntity>(recognizeStroke(_ellipse(80, 80, 0, math.pi, 24))),
-        isA<ArcEntity>());
-    expect(
-        _entity<ArcEntity>(recognizeStroke(_ellipse(80, 80, 0, math.pi / 2, 16))),
-        isA<ArcEntity>());
+  test('half and quarter arcs -> ArcResult (model arc, joins contours)', () {
+    expect(recognizeStroke(_ellipse(80, 80, 0, math.pi, 24)), isA<ArcResult>());
+    expect(recognizeStroke(_ellipse(80, 80, 0, math.pi / 2, 16)), isA<ArcResult>());
   });
 
   test('polygons -> PolylineResult', () {

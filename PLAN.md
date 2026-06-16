@@ -51,8 +51,13 @@ can replace the internals later behind the same C ABI.**
   point-on-circle); closed line+arc contours (slots, rounded shapes) solve and
   extrude; **auto-tangency** inference
 - [x] **Import** STL/OBJ meshes import as parts (render, connectors, mate)
-- [ ] **M5** AI design assistant: structured sketch JSON → Claude → tool-call
-  suggestions for constraints + design-rule flags ("always watching")
+- [~] **M5** AI design assistant: structured sketch JSON → Claude → suggestions
+  for constraints + design-rule flags. **Harness path live**: a right-side
+  `AiPanel` serializes the active part (`lib/ai/sketch_serializer.dart`) and
+  calls Claude through the terminal session via `claude -p`
+  (`lib/ai/ai_client.dart`) — reuses `~/.claude` auth, no API key, billed
+  against the subscription. Still to do: apply suggestions back onto the
+  sketch (tool-calls), and the "always watching" debounced auto-review.
 
 ## Deferred to the native (iOS) build
 
@@ -67,6 +72,9 @@ around them.
 - **6-DOF / over-constrained assembly mate solver** — harness does single
   closed-form fasten mates.
 - Native **file picker** (harness types a path).
+- **AI transport**: harness shells out to the terminal `claude` CLI (subscription
+  auth). The native build needs a real backend proxy holding an Anthropic API
+  key; `AiClient` keeps the same call shape so only the transport swaps.
 
 ## Known harness gaps / polish backlog
 

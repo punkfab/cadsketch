@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'ffi/sketch_kernel_ffi.dart';
 import 'sketch/mesh_import.dart';
+import 'ui/ai_panel.dart';
 import 'ui/assembly_view.dart';
 import 'ui/sketch_canvas.dart';
 import 'ui/solid_view.dart';
@@ -140,9 +141,16 @@ class _SketchHomeState extends State<SketchHome> {
         children: [
           _PartsBar(controller: _controller),
           Expanded(
-            child: Container(
-              color: const Color(0xFF101418),
-              child: SketchCanvas(controller: _controller),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    color: const Color(0xFF101418),
+                    child: SketchCanvas(controller: _controller),
+                  ),
+                ),
+                AiPanel(controller: _controller),
+              ],
             ),
           ),
         ],

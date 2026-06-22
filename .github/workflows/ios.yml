@@ -1,0 +1,114 @@
+name: iOS TestFlight
+
+# Builds + uploads to TestFlight on a release tag (cut a build intentionally;
+# macOS runners bill ~10x, so we don't build on every push), plus manual
+# dispatch from the Actions tab. The build number is derived automatically from
+# the Unix epoch — no manual pubspec bump, and never a duplicate.
+#
+#   git tag ios-v0.1.0 && git push origin ios-v0.1.0   →  builds & uploads
+#
+# Unlike most Flutter apps, this one statically links a C++ geometry kernel
+# (native/sketch_kernel.cpp) via the local CocoaPod in ios/. `pod install`
+# (run by `flutter build ios`) compiles it; the Podfile force-loads it.
+on:
+  push:
+    tags:
+      - 'ios-v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    # macos-26 ships Xcode 26 (iOS 26 SDK) — App Store Connect rejects uploads
+    # built with anything older.
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Select latest Xcode (iOS 26 SDK)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      # Marketing version (x.y.z) from the tag (ios-v0.1.0 → 0.1.0) or pubspec.
+      # Build number = Unix epoch seconds: always large and monotonically
+      # increasing, so an older manual upload can never sort above a CI build
+      # (TestFlight orders by build number).
+      - name: Compute version + build number
+        id: ver
+        run: |
+          REF="${{ github.ref_name }}"
+          if [[ "$REF" == ios-v* ]]; then
+            VERSION="${REF#ios-v}"
+          else
+            VERSION=$(grep '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*([0-9.]+).*/\1/')
+          fi
+          BUILD=$(date -u +%s)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "Building $VERSION (+$BUILD)"
+
+      # The App Store Connect API key drives cloud signing (xcodebuild
+      # fetches/creates the distribution cert + profile itself) and the
+      # TestFlight upload. No .p12, no keychain. Key role: App Manager or Admin.
+      - name: Install App Store Connect API key
+        env:
+          P8: ${{ secrets.APP_STORE_CONNECT_P8 }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "$P8" > ~/private_keys/AuthKey_${KEY_ID}.p8
+
+      - name: Build Flutter iOS (no codesign)
+        run: |
+          flutter build ios --release --no-codesign \
+            --build-name=${{ steps.ver.outputs.version }} \
+            --build-number=${{ steps.ver.outputs.build }}
+
+      - name: Archive with cloud signing
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner -configuration Release \
+            -archivePath build/Runner.xcarchive archive \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -allowProvisioningDeviceRegistration \
+            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM=W527ZN3X52
+
+      - name: Export and upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath build/Runner.xcarchive \
+            -exportOptionsPlist ios/ExportOptionsCI.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+
+      - name: Clean up key
+        if: always()
+        run: rm -rf ~/private_keys

@@ -1,0 +1,66 @@
+# Flutter iOS Podfile. Beyond the standard Flutter boilerplate this adds the
+# local `sketch_kernel` pod (the C++ geometry kernel) and force-loads it into
+# the Runner, because its symbols are only referenced from Dart at runtime
+# (DynamicLibrary.process) — without -force_load the linker drops the archive.
+platform :ios, '13.0'
+
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  # No use_frameworks! — pods build as static libraries, so the kernel becomes
+  # libsketch_kernel.a (which the post_install -force_load below references).
+  # The app has no plugin pods that require dynamic frameworks.
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  # The durable C++ geometry kernel, compiled into the app.
+  pod 'sketch_kernel', :path => '.'
+
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+  end
+
+  # Force-load the kernel archive into Runner so its sk_* symbols survive the
+  # linker (they're only looked up at runtime via dart:ffi).
+  installer.aggregate_targets.each do |aggregate_target|
+    aggregate_target.user_project.native_targets.each do |native_target|
+      next unless native_target.name == 'Runner'
+      native_target.build_configurations.each do |config|
+        ldflags = config.build_settings['OTHER_LDFLAGS'] || ['$(inherited)']
+        ldflags = [ldflags] unless ldflags.is_a?(Array)
+        force = '-force_load "${PODS_CONFIGURATION_BUILD_DIR}/sketch_kernel/libsketch_kernel.a"'
+        ldflags << force unless ldflags.include?(force)
+        config.build_settings['OTHER_LDFLAGS'] = ldflags
+      end
+    end
+    aggregate_target.user_project.save
+  end
+end

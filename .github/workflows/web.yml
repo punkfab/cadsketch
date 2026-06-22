@@ -43,6 +43,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # flutter test runs on the Dart VM via the native FFI path, so it needs
+      # the kernel .so present at build/native/ (the loader's fallback).
+      - name: Build native kernel (for tests)
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          bash build_native.sh
+
       - name: Run tests
         run: flutter test
 

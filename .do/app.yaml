@@ -24,7 +24,9 @@ static_sites:
     catchall_document: index.html
     routes:
       - path: /
+# DNS stays at the registrar (no DO nameserver delegation). DO only needs a
+# record pointing cadsketch.ai at the app's ingress hostname; with no `zone`,
+# DO will not try to manage the domain's zone.
 domains:
   - domain: cadsketch.ai
     type: PRIMARY
-    zone: cadsketch.ai

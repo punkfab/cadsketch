@@ -1,0 +1,30 @@
+# DigitalOcean App Platform spec for the CADSketch landing page.
+#
+# A plain static HTML site (no build step) served from the landing/ directory
+# of the ai-sketcher repo. Auto-redeploys on push to main.
+#
+# Spin up:
+#   doctl apps create --spec .do/app.yaml
+# Update an existing app:
+#   doctl apps update <APP_ID> --spec .do/app.yaml
+#
+# Prereqs: DO must be authorized on the (private) GitHub repo — do this once in
+# the DO console (Settings → GitHub) or you'll get a repo-access error.
+name: cadsketch
+region: nyc
+static_sites:
+  - name: cadsketch
+    github:
+      repo: dnewcome/ai-sketcher
+      branch: main
+      deploy_on_push: true
+    # No build command — files are served as-is from this directory.
+    source_dir: landing
+    index_document: index.html
+    catchall_document: index.html
+    routes:
+      - path: /
+domains:
+  - domain: cadsketch.ai
+    type: PRIMARY
+    zone: cadsketch.ai

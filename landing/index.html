@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CADSketch — sketch rough, get exact</title>
+  <meta name="description" content="CADSketch turns freehand Apple Pencil sketches into clean, constrained, fully-dimensioned parametric CAD on iPad — then extrudes and assembles. An AI design assistant watches as you draw.">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta property="og:title" content="CADSketch — sketch rough, get exact">
+  <meta property="og:description" content="Freehand Apple Pencil sketches become constrained, dimensioned parametric CAD on iPad.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --sheet:   #0F2747;   /* blueprint ground */
+      --sheet-2: #0C2039;
+      --panel:   #143461;
+      --ink:     #FFFFFF;   /* linework + headlines */
+      --body:    #C5D8F0;
+      --pale:    #8FB3DE;   /* dimensions, annotations */
+      --rule:        rgba(255,255,255,0.24);
+      --rule-faint:  rgba(255,255,255,0.10);
+      --redline: #FF6B6B;   /* the one markup accent (red-pencil) */
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Space Grotesk', system-ui, sans-serif;
+      background: var(--sheet);
+      color: var(--body);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* hairline blueprint grid */
+    .grid-bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(var(--rule-faint) 1px, transparent 1px),
+        linear-gradient(90deg, var(--rule-faint) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    /* a few heavier blueprint major lines */
+    .grid-major {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+      background-size: 140px 140px;
+    }
+
+    /* drawing-sheet frame with corner registration ticks */
+    .sheet-frame {
+      position: fixed; inset: 14px; z-index: 2; pointer-events: none;
+      border: 1px solid var(--rule);
+    }
+    .sheet-frame::before { content: ''; position: absolute; inset: 6px; border: 1px solid var(--rule-faint); }
+    .tick { position: fixed; z-index: 2; width: 14px; height: 14px; pointer-events: none; border: 0 solid var(--ink); opacity: .6; }
+    .tick.tl { top: 14px; left: 14px; border-top-width: 2px; border-left-width: 2px; }
+    .tick.tr { top: 14px; right: 14px; border-top-width: 2px; border-right-width: 2px; }
+    .tick.bl { bottom: 14px; left: 14px; border-bottom-width: 2px; border-left-width: 2px; }
+    .tick.br { bottom: 14px; right: 14px; border-bottom-width: 2px; border-right-width: 2px; }
+
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .wrap { width: min(1120px, 100% - 72px); margin-inline: auto; position: relative; z-index: 1; }
+    a { color: inherit; }
+
+    .eyebrow {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.74rem; letter-spacing: 0.16em;
+      color: var(--pale); text-transform: uppercase;
+    }
+
+    /* ---- nav / sheet header ---- */
+    .nav { display: flex; align-items: center; justify-content: space-between; padding: 30px 0 0; }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 600; font-size: 1.08rem; color: var(--ink); letter-spacing: 0.01em; }
+    .nav-right { display: flex; align-items: center; gap: 22px; }
+    .nav-meta { font-family: 'IBM Plex Mono', monospace; font-size: 0.74rem; color: var(--pale); letter-spacing: 0.08em; }
+    .nav-cta {
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; letter-spacing: 0.06em;
+      text-decoration: none; color: var(--ink);
+      border: 1px solid var(--rule); padding: 9px 16px; transition: border-color .2s, background .2s;
+    }
+    .nav-cta:hover { border-color: var(--ink); background: rgba(255,255,255,0.06); }
+
+    /* ---- hero ---- */
+    .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; padding: 70px 0 90px; }
+    .hero h1 {
+      font-size: clamp(2.7rem, 6.2vw, 4.7rem);
+      font-weight: 700; line-height: 0.96; letter-spacing: -0.03em;
+      color: var(--ink); margin: 18px 0 0;
+    }
+    .hero h1 .u { position: relative; white-space: nowrap; }
+    /* dimension the headline like a drawing: a measured span under "exact" */
+    .dimrow { display: flex; align-items: center; gap: 8px; margin-top: 18px; color: var(--pale); }
+    .dimrow .line { flex: 0 0 132px; height: 9px; position: relative; }
+    .dimrow .line::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--pale); }
+    .dimrow .line::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 1px; background: var(--pale); box-shadow: 131px 0 0 var(--pale); }
+    .dimrow .val { font-family: 'IBM Plex Mono', monospace; font-size: 0.82rem; letter-spacing: 0.04em; }
+
+    .lede { color: var(--body); font-size: 1.12rem; max-width: 34ch; margin-top: 22px; }
+    .hero-actions { display: flex; align-items: center; gap: 20px; margin-top: 34px; flex-wrap: wrap; }
+    .btn { font-family: 'IBM Plex Mono', monospace; font-size: 0.86rem; letter-spacing: 0.04em; text-decoration: none; padding: 13px 22px; transition: transform .15s, background .2s, box-shadow .2s; }
+    .btn-primary { background: var(--ink); color: var(--sheet); font-weight: 600; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 30px -10px rgba(255,255,255,0.4); }
+    .btn-ghost { color: var(--pale); text-decoration: none; border-bottom: 1px solid transparent; }
+    .btn-ghost:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+    /* ---- hero drawing (signature animation) ---- */
+    .plate { position: relative; aspect-ratio: 1 / 1; width: 100%; border: 1px solid var(--rule); background: rgba(255,255,255,0.015); }
+    .plate .corner { position: absolute; width: 10px; height: 10px; border: 0 solid var(--pale); opacity: .7; }
+    .plate .corner.a { top: 8px; left: 8px; border-top-width: 1.5px; border-left-width: 1.5px; }
+    .plate .corner.b { bottom: 8px; right: 8px; border-bottom-width: 1.5px; border-right-width: 1.5px; }
+    .plate-label { position: absolute; left: 14px; top: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; letter-spacing: 0.1em; color: var(--pale); text-transform: uppercase; }
+    .plate svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    .rough { fill: none; stroke: var(--pale); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 900; stroke-dashoffset: 900; animation: draw 6.5s ease-in-out infinite; }
+    .solved { opacity: 0; animation: solve 6.5s ease-in-out infinite; }
+    .solved .edge { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; }
+    .solved .node { fill: var(--ink); }
+    .solved .badge-bg { fill: var(--sheet); stroke: var(--ink); stroke-width: 1; }
+    .solved .badge-tx { fill: var(--ink); font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; }
+    .solved .dim { fill: var(--pale); font-family: 'IBM Plex Mono', monospace; font-size: 14px; }
+    .solved .dim-line { stroke: var(--pale); stroke-width: 1; }
+    .solved .ext { stroke: var(--pale); stroke-width: 1; opacity: .6; }
+
+    @keyframes draw {
+      0% { stroke-dashoffset: 900; opacity: 1; }
+      26% { stroke-dashoffset: 0; opacity: 1; }
+      38% { opacity: 0; } 92% { opacity: 0; } 100% { stroke-dashoffset: 900; opacity: 0; }
+    }
+    @keyframes solve { 0%, 32% { opacity: 0; } 44% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; } }
+
+    /* ---- sections ---- */
+    section { position: relative; z-index: 1; }
+    .section-head { margin-bottom: 38px; }
+    .section-head h2 { font-size: clamp(1.7rem, 3.4vw, 2.4rem); font-weight: 600; letter-spacing: -0.02em; color: var(--ink); margin-top: 10px; }
+
+    /* pipeline — drawing "details", a real ordered sequence */
+    .pipeline { padding: 30px 0 90px; }
+    .details { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+    .detail { background: var(--sheet-2); padding: 24px 22px 30px; }
+    .detail .marker { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; letter-spacing: 0.12em; color: var(--pale); text-transform: uppercase; }
+    .detail h3 { font-size: 1.16rem; font-weight: 600; color: var(--ink); margin: 14px 0 8px; }
+    .detail p { font-size: 0.94rem; }
+    @media (max-width: 760px) { .details { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 460px) { .details { grid-template-columns: 1fr; } }
+
+    /* features — annotated callouts */
+    .features { padding: 14px 0 96px; }
+    .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .feat { border: 1px solid var(--rule); background: var(--sheet-2); padding: 24px; transition: border-color .2s, transform .2s; }
+    .feat:hover { border-color: var(--ink); transform: translateY(-2px); }
+    .feat .tag { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; letter-spacing: 0.1em; color: var(--pale); text-transform: uppercase; }
+    .feat h3 { font-size: 1.08rem; font-weight: 600; color: var(--ink); margin: 12px 0 8px; }
+    .feat p { font-size: 0.92rem; }
+    @media (max-width: 820px) { .feat-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 520px) { .feat-grid { grid-template-columns: 1fr; } }
+
+    /* closer */
+    .closer { padding: 20px 0 90px; text-align: center; }
+    .closer-card { position: relative; border: 1px solid var(--rule); background: var(--sheet-2); padding: 70px 32px; overflow: hidden; }
+    .closer h2 { font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1; color: var(--ink); }
+    .closer p { margin: 18px auto 0; max-width: 44ch; }
+    .closer .hero-actions { justify-content: center; }
+    .closer .note { font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; color: var(--pale); margin-top: 22px; letter-spacing: 0.06em; }
+    /* private-beta stamp — the single redline markup */
+    .stamp {
+      position: absolute; top: 26px; right: -52px; transform: rotate(18deg);
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.18em;
+      color: var(--redline); border: 2px solid var(--redline); padding: 7px 60px;
+      opacity: .85; text-transform: uppercase;
+    }
+
+    /* ---- title block (the signature footer) ---- */
+    footer { position: relative; z-index: 1; padding: 0 0 40px; }
+    .titleblock { border: 1.5px solid var(--rule); display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; }
+    .tb { border-right: 1px solid var(--rule); padding: 16px 18px; }
+    .tb:last-child { border-right: 0; }
+    .tb .k { font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; letter-spacing: 0.16em; color: var(--pale); text-transform: uppercase; }
+    .tb .v { font-size: 1rem; color: var(--ink); margin-top: 6px; }
+    .tb .v.big { font-size: 1.25rem; font-weight: 600; letter-spacing: 0.01em; }
+    .tb a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--rule); }
+    .tb a:hover { border-bottom-color: var(--ink); }
+    @media (max-width: 680px) { .titleblock { grid-template-columns: 1fr 1fr; } .tb { border-bottom: 1px solid var(--rule); } }
+
+    @media (max-width: 880px) {
+      .hero { grid-template-columns: 1fr; gap: 44px; }
+      .plate { max-width: 420px; }
+      .wrap { width: min(1120px, 100% - 44px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rough { animation: none; opacity: 0; }
+      .solved { animation: none; opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <div class="grid-major"></div>
+  <div class="sheet-frame"></div>
+  <span class="tick tl"></span><span class="tick tr"></span>
+  <span class="tick bl"></span><span class="tick br"></span>
+
+  <header class="wrap">
+    <nav class="nav">
+      <div class="brand">
+        <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+          <rect x="4.5" y="4.5" width="17" height="17" rx="0.5" stroke="#FFFFFF" stroke-width="1.6"/>
+          <circle cx="4.5" cy="4.5" r="2.4" fill="#0F2747" stroke="#FFFFFF" stroke-width="1.3"/>
+          <circle cx="21.5" cy="21.5" r="2.4" fill="#0F2747" stroke="#FFFFFF" stroke-width="1.3"/>
+        </svg>
+        CADSketch
+      </div>
+      <div class="nav-right">
+        <span class="nav-meta">REV 0.1 · iPad</span>
+        <a class="nav-cta" href="#beta">Join the beta</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <span class="eyebrow">iPad · Apple Pencil · live constraint solver</span>
+        <h1>Sketch rough.<br><span class="u">Get exact.</span></h1>
+        <div class="dimrow">
+          <span class="line"></span>
+          <span class="val">freehand → constrained</span>
+        </div>
+        <p class="lede">CADSketch reads your freehand Apple Pencil strokes and snaps them to clean, constrained, fully-dimensioned parametric geometry — then extrudes and assembles it.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#beta">Request beta access</a>
+          <a class="btn btn-ghost" href="#how">See how it works ↓</a>
+        </div>
+      </div>
+
+      <!-- Signature drawing: freehand stroke draws, then snaps to solved CAD. -->
+      <div class="plate" aria-label="A freehand sketch resolving into constrained, dimensioned geometry">
+        <span class="corner a"></span><span class="corner b"></span>
+        <span class="plate-label">sketch.solve()</span>
+        <svg viewBox="0 0 400 400" role="img">
+          <path class="rough" d="M92,128 L300,121 L308,279 L96,286 L88,126 L150,127" />
+          <g class="solved">
+            <rect class="edge" x="100" y="120" width="200" height="160"/>
+            <circle class="node" cx="100" cy="120" r="4.5"/>
+            <circle class="node" cx="300" cy="120" r="4.5"/>
+            <circle class="node" cx="300" cy="280" r="4.5"/>
+            <circle class="node" cx="100" cy="280" r="4.5"/>
+            <rect class="badge-bg" x="190" y="98" width="20" height="20"/>
+            <text class="badge-tx" x="200" y="112" text-anchor="middle">H</text>
+            <rect class="badge-bg" x="312" y="190" width="20" height="20"/>
+            <text class="badge-tx" x="322" y="204" text-anchor="middle">V</text>
+            <!-- dimensioned bottom edge with extension lines + value -->
+            <line class="ext" x1="100" y1="284" x2="100" y2="312"/>
+            <line class="ext" x1="300" y1="284" x2="300" y2="312"/>
+            <line class="dim-line" x1="100" y1="306" x2="300" y2="306"/>
+            <text class="dim" x="200" y="332" text-anchor="middle">120.0</text>
+            <text class="dim" x="74" y="205" text-anchor="middle" transform="rotate(-90 74 205)">96.0</text>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <section class="pipeline" id="how">
+      <div class="section-head">
+        <span class="eyebrow">The loop</span>
+        <h2>From a stroke to a solved part.</h2>
+      </div>
+      <div class="details">
+        <div class="detail">
+          <span class="marker">Detail 01 · Sketch</span>
+          <h3>Draw freehand</h3>
+          <p>Lines, arcs, circles, polylines — drawn loose with the Pencil. Recognition tells curves from corners.</p>
+        </div>
+        <div class="detail">
+          <span class="marker">Detail 02 · Constrain</span>
+          <h3>It infers intent</h3>
+          <p>Horizontal, vertical, parallel, perpendicular, equal-length and tangent constraints, inferred as you draw.</p>
+        </div>
+        <div class="detail">
+          <span class="marker">Detail 03 · Dimension</span>
+          <h3>Tap to set a value</h3>
+          <p>Drive any edge or radius with a number. Bind shared parameters so one edit updates every part.</p>
+        </div>
+        <div class="detail">
+          <span class="marker">Detail 04 · Build</span>
+          <h3>Extrude &amp; assemble</h3>
+          <p>Push a closed profile into a solid, then mate parts together in a shared 3D scene.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="features">
+      <div class="section-head">
+        <span class="eyebrow">Under the canvas</span>
+        <h2>A real solver, not a snap-to-grid.</h2>
+      </div>
+      <div class="feat-grid">
+        <div class="feat">
+          <span class="tag">Geometry kernel</span>
+          <h3>Live constraint solving</h3>
+          <p>A Levenberg–Marquardt solver resolves your sketch every time you draw or dimension — geometry settles, never runs away.</p>
+        </div>
+        <div class="feat">
+          <span class="tag">Recognition</span>
+          <h3>Reads what you meant</h3>
+          <p>Corner-sharpness analysis separates a deliberate curve from a sharp corner, so a circle stays a circle.</p>
+        </div>
+        <div class="feat">
+          <span class="tag">Parameters</span>
+          <h3>Shared across parts</h3>
+          <p>Name a dimension once and reuse it everywhere. Change the value and the whole assembly re-solves.</p>
+        </div>
+        <div class="feat">
+          <span class="tag">Assistant</span>
+          <h3>An AI that watches</h3>
+          <p>A design assistant reads the sketch as you work and flags missing constraints and design-rule problems.</p>
+        </div>
+        <div class="feat">
+          <span class="tag">3D</span>
+          <h3>Profiles become solids</h3>
+          <p>Closed line-and-arc contours extrude to prisms and cylinders; parts assemble with fasten mates.</p>
+        </div>
+        <div class="feat">
+          <span class="tag">Import</span>
+          <h3>Bring in geometry</h3>
+          <p>Drop in STL and OBJ meshes as parts — give them mate connectors and build them into the assembly.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="closer" id="beta">
+      <div class="closer-card">
+        <span class="stamp">Private Beta</span>
+        <span class="eyebrow">TestFlight</span>
+        <h2>Put it on your iPad.</h2>
+        <p>CADSketch is in private beta. Ask for an invite and I'll add you to the next TestFlight build.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="mailto:beta@cadsketch.ai?subject=CADSketch%20beta%20access">Request beta access</a>
+        </div>
+        <p class="note">beta@cadsketch.ai</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <div class="titleblock">
+      <div class="tb">
+        <div class="k">Project</div>
+        <div class="v big">CADSketch</div>
+      </div>
+      <div class="tb">
+        <div class="k">Drawn by</div>
+        <div class="v">Dan Newcome</div>
+      </div>
+      <div class="tb">
+        <div class="k">Scale</div>
+        <div class="v">1:1</div>
+      </div>
+      <div class="tb">
+        <div class="k">Sheet</div>
+        <div class="v"><a href="mailto:beta@cadsketch.ai">cadsketch.ai</a></div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

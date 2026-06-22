@@ -23,6 +23,10 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    # peaceiris/actions-gh-pages pushes the built site to the `site` branch,
+    # which needs write access to repo contents (GITHUB_TOKEN is read-only by default).
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4.2.2
 

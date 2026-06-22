@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:ai_sketcher/ffi/sketch_kernel_ffi.dart';
+import 'package:ai_sketcher/ffi/sketch_kernel.dart';
 
 // Stage 1 of unifying circles/arcs into the solver: radius is now a solve
 // unknown, with point-on-circle / radius / tangent constraints.

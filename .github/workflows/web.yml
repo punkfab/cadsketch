@@ -1,0 +1,64 @@
+name: Web (landing + app) → DigitalOcean
+
+# Builds the static site and publishes it to the `site` branch, which the
+# DigitalOcean App Platform static site serves (deploy_on_push). The site is:
+#   /        → the landing page (landing/)
+#   /app     → the Flutter web app, with the C++ kernel compiled to WASM
+#
+# Runs on ubuntu (cheap), unlike the macOS iOS build. The kernel is built once
+# here (emscripten) and once natively for iOS — same native/sketch_kernel.cpp.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'native/**'
+      - 'web/**'
+      - 'landing/**'
+      - 'pubspec.*'
+      - 'build_wasm.sh'
+      - '.github/workflows/web.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Set up emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.69
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build the WASM kernel
+        run: bash build_wasm.sh
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build Flutter web (served under /app)
+        run: flutter build web --release --base-href /app/
+
+      - name: Assemble site (landing at /, app at /app)
+        run: |
+          rm -rf public && mkdir -p public
+          cp -r landing/. public/
+          cp -r build/web public/app
+
+      - name: Publish to the site branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: site
+          force_orphan: true

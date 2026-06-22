@@ -46,3 +46,7 @@ app.*.map.json
 
 # Native kernel standalone build output
 /native/build/
+
+# Generated WASM kernel (built by build_wasm.sh / CI)
+web/kernel/sketch_kernel.js
+web/kernel/sketch_kernel.wasm

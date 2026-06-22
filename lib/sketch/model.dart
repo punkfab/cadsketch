@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
-import '../ffi/sketch_kernel_ffi.dart';
+import '../ffi/sketch_kernel.dart';
 
 // The parametric sketch: shared points, segments between them, and the
 // constraints inferred among them. Lines drawn on the canvas feed in here;

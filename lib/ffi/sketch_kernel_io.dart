@@ -184,6 +184,11 @@ class SketchKernel {
   Sketch newSketch() => Sketch._(this, _skCreate());
 }
 
+/// No-op on native (the library is loaded synchronously via dlopen). On web
+/// this awaits the WASM module — see sketch_kernel_web.dart. Kept here so the
+/// conditional-import facade (sketch_kernel.dart) has one uniform entry point.
+Future<void> ensureKernelReady() async {}
+
 /// A constraint-solver sketch: add points, constrain them, solve, read back.
 /// Owns a native handle — call [dispose] when done.
 class Sketch {

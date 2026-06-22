@@ -3,7 +3,7 @@ import 'dart:ui' show Offset;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
-import '../ffi/sketch_kernel_ffi.dart';
+import '../ffi/sketch_kernel.dart';
 import 'entities.dart';
 
 // Stroke recognition. A single stroke becomes one of:

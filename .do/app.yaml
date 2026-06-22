@@ -1,10 +1,11 @@
-# DigitalOcean App Platform spec for the CADSketch landing page.
+# DigitalOcean App Platform spec for CADSketch.
 #
-# A plain static HTML site (no build step) served from the landing/ directory
-# of the ai-sketcher repo. Auto-redeploys on push to main.
+# Serves the prebuilt static site from the `site` branch (no build step here):
+#   /     → the landing page
+#   /app  → the Flutter web app (C++ kernel compiled to WASM)
+# The `site` branch is produced by .github/workflows/web.yml on every push to
+# main; DO redeploys on push to `site`.
 #
-# Spin up:
-#   doctl apps create --spec .do/app.yaml
 # Update an existing app:
 #   doctl apps update <APP_ID> --spec .do/app.yaml
 #
@@ -16,10 +17,10 @@ static_sites:
   - name: cadsketch
     github:
       repo: dnewcome/ai-sketcher
-      branch: main
+      branch: site
       deploy_on_push: true
-    # No build command — files are served as-is from this directory.
-    source_dir: landing
+    # Prebuilt by CI — served as-is from the branch root.
+    source_dir: /
     index_document: index.html
     catchall_document: index.html
     routes:

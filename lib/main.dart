@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 
-import 'ffi/sketch_kernel_ffi.dart';
+import 'ffi/sketch_kernel.dart';
 import 'sketch/mesh_import.dart';
 import 'ui/ai_panel.dart';
 import 'ui/assembly_view.dart';
 import 'ui/sketch_canvas.dart';
 import 'ui/solid_view.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // On web this awaits the WASM kernel module; on native it's a no-op (the
+  // library is dlopen'd synchronously). Either way the kernel is ready before
+  // the first stroke is solved.
+  await ensureKernelReady();
   runApp(const AiSketcherApp());
 }
 

@@ -60,11 +60,13 @@ post_install do |installer|
         #    Dart, so without this the linker dead-strips the whole archive.
         force = '-force_load "${PODS_CONFIGURATION_BUILD_DIR}/sketch_kernel/libsketch_kernel.a"'
         ldflags << force unless ldflags.include?(force)
-        # 2) Export the executable's global symbols into its dynamic symbol table
-        #    so DynamicLibrary.process()/dlsym can find sk_* at runtime. Without
-        #    this, statically-linked symbols aren't dlsym-able on iOS and you get
-        #    "Failed to lookup symbol 'sk_version'".
-        ldflags << '-Wl,-export_dynamic' unless ldflags.include?('-Wl,-export_dynamic')
+        # 2) Force the kernel's sk_* symbols into the executable's export table so
+        #    DynamicLibrary.process()/dlsym can resolve them at runtime. An explicit
+        #    exported-symbols list is more deterministic than -export_dynamic:
+        #    listed symbols are guaranteed exported and survive stripping. Without
+        #    this you get "Failed to lookup symbol 'sk_version'".
+        syms = '-Wl,-exported_symbols_list,$(SRCROOT)/sk_exported_symbols.txt'
+        ldflags << syms unless ldflags.include?(syms)
         config.build_settings['OTHER_LDFLAGS'] = ldflags
       end
     end

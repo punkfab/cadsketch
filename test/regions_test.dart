@@ -90,5 +90,17 @@ void main() {
     test('empty sketch decomposes to nothing', () {
       expect(decompose(ParametricSketch(), depth: 50).isEmpty, isTrue);
     });
+
+    test('per-region depth override changes only that part height', () {
+      final d = decompose(_splitSquare(), depth: 50, depthOverrides: {0: 120});
+      double height(int p) {
+        final zs = d.parts[p].solid.vertices.map((v) => v.z);
+        return zs.reduce((a, b) => a > b ? a : b) -
+            zs.reduce((a, b) => a < b ? a : b);
+      }
+
+      expect(height(0), closeTo(120, 1e-6));
+      expect(height(1), closeTo(50, 1e-6));
+    });
   });
 }

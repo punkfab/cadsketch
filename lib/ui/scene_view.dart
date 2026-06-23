@@ -34,6 +34,7 @@ class _SceneViewState extends State<SceneView> {
   double _pitch = -0.5;
   double _explode = 0;
   bool _sketchMode = true;
+  int? _selected; // region/part index drilled into (orbit mode)
 
   // In-progress stroke (screen-space points) while drawing.
   List<Offset>? _stroke;
@@ -59,11 +60,48 @@ class _SceneViewState extends State<SceneView> {
   // Face-on angles for sketching on the base XY plane (looking down +Z).
   void _toggleSketch() => setState(() {
         _sketchMode = !_sketchMode;
+        _selected = null;
         if (_sketchMode) {
           _yaw = 0;
           _pitch = 0;
         }
       });
+
+  /// Front-most part whose projected solid contains [p], or null (deselect).
+  int? _partAt(Offset p, Decomposition decomp, Camera cam) {
+    int? best;
+    var bestDepth = -double.infinity;
+    for (var pi = 0; pi < decomp.parts.length; pi++) {
+      final solid = decomp.parts[pi].solid;
+      final shift = decomp.explodeOffset(pi, _explode);
+      for (final ring in solid.faces) {
+        final poly = [for (final i in ring) cam.project(solid.vertices[i] + shift)];
+        if (!_pointInPoly(p, poly)) continue;
+        var d = 0.0;
+        for (final i in ring) {
+          d += cam.depthOf(solid.vertices[i] + shift);
+        }
+        d /= ring.length;
+        if (d > bestDepth) {
+          bestDepth = d;
+          best = pi;
+        }
+      }
+    }
+    return best;
+  }
+
+  static bool _pointInPoly(Offset p, List<Offset> poly) {
+    var inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      final a = poly[i], b = poly[j];
+      if ((a.dy > p.dy) != (b.dy > p.dy) &&
+          p.dx < (b.dx - a.dx) * (p.dy - a.dy) / (b.dy - a.dy) + a.dx) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
 
   Camera _camera(Size size, Decomposition decomp) {
     final empty = decomp.isEmpty;
@@ -114,9 +152,9 @@ class _SceneViewState extends State<SceneView> {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final size = constraints.biggest;
-                    final painter = _ScenePainter(
-                        decomp, part.sketch, _plane, _camera(size, decomp),
-                        _explode, _stroke, _palette);
+                    final cam = _camera(size, decomp);
+                    final painter = _ScenePainter(decomp, part.sketch, _plane,
+                        cam, _explode, _stroke, _selected, _palette);
                     final canvas = CustomPaint(painter: painter, size: Size.infinite);
                     return _sketchMode
                         ? Listener(
@@ -131,6 +169,8 @@ class _SceneViewState extends State<SceneView> {
                           )
                         : GestureDetector(
                             onPanUpdate: (e) => _orbit(e.delta),
+                            onTapUp: (e) => setState(() =>
+                                _selected = _partAt(e.localPosition, decomp, cam)),
                             child: canvas,
                           );
                   },
@@ -145,46 +185,82 @@ class _SceneViewState extends State<SceneView> {
   }
 
   Widget _controls(Decomposition decomp) {
+    final sel = _selected;
+    final c = widget.controller;
+    final body = sel != null && !_sketchMode && sel < decomp.parts.length
+        // Drilled into a part: edit its own depth (overrides the base depth);
+        // geometry still rebuilds from the master sketch (associative).
+        ? Row(
+            children: [
+              IconButton(
+                tooltip: 'Back to assembly',
+                icon: const Icon(Icons.arrow_back, size: 18),
+                onPressed: () => setState(() => _selected = null),
+              ),
+              Text(decomp.parts[sel].name,
+                  style: const TextStyle(color: Colors.white, fontSize: 13)),
+              const SizedBox(width: 12),
+              const Text('Depth',
+                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Expanded(
+                child: Slider(
+                  value: (c.regionDepths[sel] ?? c.active.depth).clamp(5, 400),
+                  min: 5,
+                  max: 400,
+                  onChanged: (v) => c.setRegionDepth(sel, v),
+                ),
+              ),
+              if (c.regionDepths.containsKey(sel))
+                IconButton(
+                  tooltip: 'Reset to base depth',
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  onPressed: () => c.clearRegionDepth(sel),
+                ),
+            ],
+          )
+        : Row(
+            children: [
+              Text(
+                _sketchMode
+                    ? 'Draw on the plane'
+                    : '${decomp.parts.length} part${decomp.parts.length == 1 ? '' : 's'}'
+                        ' · ${decomp.mates.length} mate${decomp.mates.length == 1 ? '' : 's'}'
+                        '${decomp.parts.isEmpty ? '' : ' · tap a part'}',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(width: 16),
+              const Icon(Icons.open_in_full, size: 16, color: Colors.white54),
+              Expanded(
+                child: Slider(
+                  value: _explode,
+                  onChanged:
+                      _sketchMode ? null : (v) => setState(() => _explode = v),
+                ),
+              ),
+              const Text('Depth',
+                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              SizedBox(
+                width: 160,
+                child: Slider(
+                  value: c.active.depth.clamp(5, 400),
+                  min: 5,
+                  max: 400,
+                  onChanged: (v) => c.setDepth(v),
+                ),
+              ),
+            ],
+          );
     return Container(
       color: const Color(0xFF161C22),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Text(
-            _sketchMode
-                ? 'Draw on the plane'
-                : '${decomp.parts.length} part${decomp.parts.length == 1 ? '' : 's'}'
-                    ' · ${decomp.mates.length} mate${decomp.mates.length == 1 ? '' : 's'}',
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-          ),
-          const SizedBox(width: 16),
-          const Icon(Icons.open_in_full, size: 16, color: Colors.white54),
-          Expanded(
-            child: Slider(
-              value: _explode,
-              onChanged:
-                  _sketchMode ? null : (v) => setState(() => _explode = v),
-            ),
-          ),
-          const Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12)),
-          SizedBox(
-            width: 160,
-            child: Slider(
-              value: widget.controller.active.depth.clamp(5, 400),
-              min: 5,
-              max: 400,
-              onChanged: (v) => widget.controller.setDepth(v),
-            ),
-          ),
-        ],
-      ),
+      child: body,
     );
   }
 }
 
 class _ScenePainter extends CustomPainter {
   _ScenePainter(this.decomp, this.sketch, this.plane, this.cam, this.explode,
-      this.stroke, this.palette);
+      this.stroke, this.selected, this.palette);
 
   final Decomposition decomp;
   final ParametricSketch sketch;
@@ -192,6 +268,7 @@ class _ScenePainter extends CustomPainter {
   final Camera cam;
   final double explode;
   final List<Offset>? stroke;
+  final int? selected;
   final List<Color> palette;
 
   @override
@@ -218,10 +295,11 @@ class _ScenePainter extends CustomPainter {
     for (var pi = 0; pi < decomp.parts.length; pi++) {
       final solid = decomp.parts[pi].solid;
       final shift = decomp.explodeOffset(pi, explode);
+      final isSel = pi == selected;
       final paint = Paint()
-        ..color = palette[pi % palette.length]
+        ..color = isSel ? Colors.white : palette[pi % palette.length]
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6
+        ..strokeWidth = isSel ? 2.6 : 1.6
         ..strokeCap = StrokeCap.round;
       for (final e in solid.edges) {
         canvas.drawLine(cam.project(solid.vertices[e[0]] + shift),

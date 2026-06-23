@@ -169,13 +169,6 @@
     .closer p { margin: 18px auto 0; max-width: 44ch; }
     .closer .hero-actions { justify-content: center; }
     .closer .note { font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; color: var(--pale); margin-top: 22px; letter-spacing: 0.06em; }
-    /* private-beta stamp — the single redline markup */
-    .stamp {
-      position: absolute; top: 26px; right: -52px; transform: rotate(18deg);
-      font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.18em;
-      color: var(--redline); border: 2px solid var(--redline); padding: 7px 60px;
-      opacity: .85; text-transform: uppercase;
-    }
 
     /* ---- title block (the signature footer) ---- */
     footer { position: relative; z-index: 1; padding: 0 0 40px; }
@@ -220,7 +213,7 @@
       </div>
       <div class="nav-right">
         <span class="nav-meta">REV 0.1 · iPad</span>
-        <a class="nav-cta" href="#beta">Join the beta</a>
+        <a class="nav-cta" href="/app/">Open the app</a>
       </div>
     </nav>
   </header>
@@ -236,7 +229,7 @@
         </div>
         <p class="lede">CADSketch reads your freehand Apple Pencil strokes and snaps them to clean, constrained, fully-dimensioned parametric geometry — then extrudes and assembles it.</p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="#beta">Request beta access</a>
+          <a class="btn btn-primary" href="/app/">Open the app</a>
           <a class="btn btn-ghost" href="#how">See how it works ↓</a>
         </div>
       </div>
@@ -336,16 +329,14 @@
       </div>
     </section>
 
-    <section class="closer" id="beta">
+    <section class="closer" id="try">
       <div class="closer-card">
-        <span class="stamp">Private Beta</span>
-        <span class="eyebrow">TestFlight</span>
-        <h2>Put it on your iPad.</h2>
-        <p>CADSketch is in private beta. Ask for an invite and I'll add you to the next TestFlight build.</p>
+        <span class="eyebrow">Live in your browser</span>
+        <h2>Start sketching.</h2>
+        <p>CADSketch runs right in the browser — no install. Draw a shape and watch it snap to clean, constrained, dimensioned geometry.</p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="mailto:beta@cadsketch.ai?subject=CADSketch%20beta%20access">Request beta access</a>
+          <a class="btn btn-primary" href="/app/">Open the app</a>
         </div>
-        <p class="note">beta@cadsketch.ai</p>
       </div>
     </section>
   </main>
@@ -366,7 +357,7 @@
       </div>
       <div class="tb">
         <div class="k">Sheet</div>
-        <div class="v"><a href="mailto:beta@cadsketch.ai">cadsketch.ai</a></div>
+        <div class="v"><a href="/app/">Open the app</a></div>
       </div>
     </div>
   </footer>

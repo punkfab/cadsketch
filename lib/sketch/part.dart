@@ -3,6 +3,7 @@ import 'dart:ui' show Offset;
 
 import 'entities.dart';
 import 'model.dart';
+import 'plane.dart';
 import 'solid.dart';
 
 /// Segments used to tessellate a circle into an extrudable profile (cylinder).
@@ -29,11 +30,21 @@ class Part {
 
   final ParametricSketch sketch = ParametricSketch();
 
+  /// The plane this part's sketch lives on (its 2D coords map into the shared
+  /// 3D scene through this frame). Defaults to base XY; set to a body face's
+  /// frame for in-context "sketch on a face" / multi-plane construction.
+  SketchPlane plane = SketchPlane.xy;
+
   /// Non-parametric strokes (circles, arcs, scribbles) shown for context.
   final List<SketchEntity> decorations = [];
 
   /// Extrude depth used when building the solid.
   double depth = 100;
+
+  /// Per-region extrude-depth overrides for this part's region-partition
+  /// decomposition (region index -> depth). Set when drilling into a region;
+  /// geometry still rebuilds from the sketch, so this stays associative.
+  final Map<int, double> regionDepths = {};
 
   final List<MateConnector> connectors = [];
 

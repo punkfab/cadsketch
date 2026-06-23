@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'ffi/sketch_kernel.dart';
 import 'sketch/mesh_import.dart';
+import 'sketch/plane.dart';
 import 'ui/ai_panel.dart';
 import 'ui/assembly_view.dart';
 import 'ui/scene_view.dart';
 import 'ui/sketch_canvas.dart';
-import 'ui/solid_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,28 +68,12 @@ class _SketchHomeState extends State<SketchHome> {
     try {
       final solid = importMeshFile(path.trim());
       final name = path.trim().split('/').last;
-      _controller.importSolid(name, solid);
-      if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => SolidView(controller: _controller)),
-      );
+      _controller.importSolid(name, solid); // appears in the workspace scene
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Import failed: $e')));
     }
-  }
-
-  void _extrude() {
-    if (_controller.active.buildSolid() == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Draw a single closed profile (e.g. a box) to extrude'),
-      ));
-      return;
-    }
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => SolidView(controller: _controller)),
-    );
   }
 
   @override
@@ -111,25 +95,23 @@ class _SketchHomeState extends State<SketchHome> {
               ),
             ),
           ),
+          PopupMenuButton<SketchPlane>(
+            tooltip: 'New sketch on a base plane',
+            icon: const Icon(Icons.add_box_outlined),
+            onSelected: (pl) => _controller.addPlaneSketch(pl),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: SketchPlane.xy, child: Text('Sketch on XY')),
+              PopupMenuItem(value: SketchPlane.xz, child: Text('Sketch on XZ')),
+              PopupMenuItem(value: SketchPlane.yz, child: Text('Sketch on YZ')),
+            ],
+          ),
           IconButton(
             tooltip: 'Import mesh (STL/OBJ) as a part',
             icon: const Icon(Icons.upload_file),
             onPressed: _import,
           ),
           IconButton(
-            tooltip: 'Extrude closed profile',
-            icon: const Icon(Icons.view_in_ar),
-            onPressed: _extrude,
-          ),
-          IconButton(
-            tooltip: 'Decompose sketch into parts (region-partition)',
-            icon: const Icon(Icons.dashboard_customize_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => SceneView(controller: _controller)),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Assembly (mate parts)',
+            tooltip: 'Cross-part mates (assembly view)',
             icon: const Icon(Icons.account_tree_outlined),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => AssemblyView(controller: _controller)),
@@ -156,12 +138,7 @@ class _SketchHomeState extends State<SketchHome> {
           Expanded(
             child: Row(
               children: [
-                Expanded(
-                  child: Container(
-                    color: const Color(0xFF101418),
-                    child: SketchCanvas(controller: _controller),
-                  ),
-                ),
+                Expanded(child: SceneView(controller: _controller)),
                 AiPanel(controller: _controller),
               ],
             ),

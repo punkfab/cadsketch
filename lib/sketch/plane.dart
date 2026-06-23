@@ -28,6 +28,19 @@ class SketchPlane {
   /// Base YZ plane (normal +X).
   static const yz = SketchPlane(Vec3(0, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1));
 
+  /// A sketch frame on face [f] of [solid]: origin at the face centroid, normal
+  /// = the face's outward normal, with an arbitrary in-plane (u, v) basis. Lets
+  /// you sketch directly on a body face (in-context / multi-plane).
+  factory SketchPlane.fromFace(Solid solid, int f) {
+    final origin = solid.faceCentroid(f);
+    final n = solid.faceNormal(f);
+    // Pick a reference axis least parallel to n, project out n to get u.
+    final ref = n.x.abs() < 0.9 ? const Vec3(1, 0, 0) : const Vec3(0, 1, 0);
+    final u = (ref - n * dot(ref, n)).normalized;
+    final v = cross(n, u).normalized;
+    return SketchPlane(origin, u, v);
+  }
+
   Vec3 to3d(Offset p) => origin + u * p.dx + v * p.dy;
 
   /// Projects a world point onto this plane's (u, v) coordinates.

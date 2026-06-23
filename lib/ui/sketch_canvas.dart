@@ -7,6 +7,7 @@ import '../sketch/beautify.dart';
 import '../sketch/entities.dart';
 import '../sketch/model.dart';
 import '../sketch/part.dart';
+import '../sketch/plane.dart';
 import '../sketch/solid.dart';
 
 /// Captures strokes; lines feed the parametric model (inferred + solved),
@@ -264,19 +265,23 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Per-region extrude-depth overrides for the active part's decomposition,
-  /// keyed by region index. Set when drilling into a decomposed part and
-  /// changing its thickness; geometry is still recomputed from the master
-  /// sketch, so this is an associative in-context edit (see decompose()).
-  final Map<int, double> regionDepths = {};
-
+  /// Sets a per-region extrude-depth override on the active part (drilling into
+  /// a region and changing its thickness). Associative — see decompose().
   void setRegionDepth(int region, double depth) {
-    regionDepths[region] = depth;
+    active.regionDepths[region] = depth;
     notifyListeners();
   }
 
   void clearRegionDepth(int region) {
-    if (regionDepths.remove(region) != null) notifyListeners();
+    if (active.regionDepths.remove(region) != null) notifyListeners();
+  }
+
+  /// Adds a new plane-sketch (a Part on [plane]) and makes it active — the
+  /// "sketch on a base plane / on a face" entry point for multi-plane work.
+  void addPlaneSketch(SketchPlane plane, {String? name}) {
+    parts.add(Part(name ?? 'Part ${parts.length + 1}')..plane = plane);
+    activeIndex = parts.length - 1;
+    notifyListeners();
   }
 
   void addConnector(int faceIndex) {

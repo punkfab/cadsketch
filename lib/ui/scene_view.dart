@@ -1,22 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../sketch/decomposition.dart';
-import '../sketch/model.dart';
+import '../sketch/part.dart';
 import '../sketch/plane.dart';
 import '../sketch/solid.dart';
 import 'camera.dart';
 import 'sketch_canvas.dart';
 
-// The unified workspace: a split view with the 3D assembly (orbit) on one side
-// and the 2D sketch on the active plane on the other — no orbit/sketch mode
-// toggle. You draw with the full 2D tooling on the right; the left orbits the
-// extruded massing and its region-partition decomposition, recomputed from the
-// live sketch every build (associative). Tap a part in 3D to drill in and edit
-// its own depth.
-//
-// Phase: the active plane is the base XY plane. Selecting a body FACE to set the
-// sketch plane (true multi-plane / "rough 3D by construction") is the next
-// increment — it needs the multi-sketch SketchOnPlane model.
+// The unified workspace: split view, 3D assembly (orbit) + 2D sketch on the
+// active plane — no orbit/sketch mode toggle. Every part is a sketch on a plane
+// (base XY/XZ/YZ or a body face); each is region-partition-decomposed and the
+// whole lot composes into one scene, recomputed from the live sketches every
+// build (associative). Tap a body to select it (its sketch opens in the 2D
+// pane); with a face selected, "sketch on face" starts a new plane-sketch in
+// that face's frame — multi-plane / "rough 3D by construction".
 class SceneView extends StatefulWidget {
   const SceneView({super.key, required this.controller});
 
@@ -27,12 +24,11 @@ class SceneView extends StatefulWidget {
 }
 
 class _SceneViewState extends State<SceneView> {
-  static const _plane = SketchPlane.xy;
-
   double _yaw = 0.6;
   double _pitch = -0.5;
   double _explode = 0;
-  int? _selected; // part drilled into
+  int? _selItem; // selected scene item (flattened index)
+  int? _selFace; // selected face on that item (for "sketch on face")
 
   static const _palette = [
     Color(0xFF4DD0E1),
@@ -50,39 +46,37 @@ class _SceneViewState extends State<SceneView> {
         _pitch = (_pitch + d.dy * 0.01).clamp(-1.5, 1.5);
       });
 
-  Camera _camera(Size size, Decomposition decomp) {
-    final empty = decomp.isEmpty;
-    return Camera(
-      size: size,
-      center: empty ? const Vec3(0, 0, 0) : decomp.center,
-      radius: empty ? 150 : decomp.radius * (1 + _explode * 1.4) + 1,
-      yaw: _yaw,
-      pitch: _pitch,
-    );
-  }
+  Camera _camera(Size size, _Scene scene) => Camera(
+        size: size,
+        center: scene.center,
+        radius: scene.radius * (1 + _explode * 1.4) + 1,
+        yaw: _yaw,
+        pitch: _pitch,
+      );
 
-  /// Front-most part whose projected solid contains [p], or null (deselect).
-  int? _partAt(Offset p, Decomposition decomp, Camera cam) {
-    int? best;
+  ({int item, int face})? _hit(Offset p, _Scene scene, Camera cam) {
+    int? bi, bf;
     var bestDepth = -double.infinity;
-    for (var pi = 0; pi < decomp.parts.length; pi++) {
-      final solid = decomp.parts[pi].solid;
-      final shift = decomp.explodeOffset(pi, _explode);
-      for (final ring in solid.faces) {
-        final poly = [for (final i in ring) cam.project(solid.vertices[i] + shift)];
+    for (var i = 0; i < scene.items.length; i++) {
+      final solid = scene.items[i].solid;
+      final shift = scene.explode(i, _explode);
+      for (var f = 0; f < solid.faces.length; f++) {
+        final ring = solid.faces[f];
+        final poly = [for (final vi in ring) cam.project(solid.vertices[vi] + shift)];
         if (!_pointInPoly(p, poly)) continue;
         var d = 0.0;
-        for (final i in ring) {
-          d += cam.depthOf(solid.vertices[i] + shift);
+        for (final vi in ring) {
+          d += cam.depthOf(solid.vertices[vi] + shift);
         }
         d /= ring.length;
         if (d > bestDepth) {
           bestDepth = d;
-          best = pi;
+          bi = i;
+          bf = f;
         }
       }
     }
-    return best;
+    return bi == null ? null : (item: bi, face: bf!);
   }
 
   static bool _pointInPoly(Offset p, List<Offset> poly) {
@@ -97,66 +91,90 @@ class _SceneViewState extends State<SceneView> {
     return inside;
   }
 
+  void _tap(Offset p, _Scene scene, Camera cam) {
+    final h = _hit(p, scene, cam);
+    setState(() {
+      _selItem = h?.item;
+      _selFace = h?.face;
+    });
+    if (h != null) widget.controller.setActive(scene.items[h.item].authored);
+  }
+
+  void _sketchOnSelectedFace(_Scene scene) {
+    final i = _selItem, f = _selFace;
+    if (i == null || f == null) return;
+    final plane = SketchPlane.fromFace(scene.items[i].solid, f);
+    widget.controller.addPlaneSketch(plane, name: 'Face sketch');
+    setState(() {
+      _selItem = null;
+      _selFace = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Workspace · sketch + assembly')),
-      body: AnimatedBuilder(
-        animation: widget.controller,
-        builder: (context, _) {
-          final part = widget.controller.active;
-          final decomp = decompose(part.sketch,
-              depth: part.depth, depthOverrides: widget.controller.regionDepths);
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 720;
-              final pane3d = _pane3d(decomp);
-              final pane2d = _pane2d();
-              return Column(
-                children: [
-                  Expanded(
-                    child: wide
-                        ? Row(
-                            children: [
-                              Expanded(flex: 11, child: pane3d),
-                              const VerticalDivider(width: 1),
-                              Expanded(flex: 9, child: pane2d),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              Expanded(child: pane3d),
-                              const Divider(height: 1),
-                              Expanded(child: pane2d),
-                            ],
-                          ),
-                  ),
-                  _controls(decomp),
-                ],
-              );
-            },
-          );
-        },
-      ),
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        final scene = _buildScene(widget.controller.parts);
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 720;
+            final pane3d = _pane3d(scene);
+            final pane2d = _pane2d();
+            return Column(
+              children: [
+                Expanded(
+                  child: wide
+                      ? Row(children: [
+                          Expanded(flex: 11, child: pane3d),
+                          const VerticalDivider(width: 1),
+                          Expanded(flex: 9, child: pane2d),
+                        ])
+                      : Column(children: [
+                          Expanded(child: pane3d),
+                          const Divider(height: 1),
+                          Expanded(child: pane2d),
+                        ]),
+                ),
+                _controls(scene),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
-  Widget _pane3d(Decomposition decomp) {
+  Widget _pane3d(_Scene scene) {
     return Container(
       color: const Color(0xFF0E1216),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final size = constraints.biggest;
-          final cam = _camera(size, decomp);
-          return GestureDetector(
-            onPanUpdate: (e) => _orbit(e.delta),
-            onTapUp: (e) =>
-                setState(() => _selected = _partAt(e.localPosition, decomp, cam)),
-            child: CustomPaint(
-              painter: _ScenePainter(decomp, widget.controller.active.sketch,
-                  _plane, cam, _explode, _selected, _palette),
-              size: Size.infinite,
-            ),
+          final cam = _camera(size, scene);
+          return Stack(
+            children: [
+              GestureDetector(
+                onPanUpdate: (e) => _orbit(e.delta),
+                onTapUp: (e) => _tap(e.localPosition, scene, cam),
+                child: CustomPaint(
+                  painter: _ScenePainter(scene, widget.controller.parts, cam,
+                      _explode, _selItem, _selFace, _palette),
+                  size: Size.infinite,
+                ),
+              ),
+              if (_selFace != null)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: FilledButton.icon(
+                    onPressed: () => _sketchOnSelectedFace(scene),
+                    icon: const Icon(Icons.draw, size: 18),
+                    label: const Text('Sketch on face'),
+                  ),
+                ),
+            ],
           );
         },
       ),
@@ -169,120 +187,207 @@ class _SceneViewState extends State<SceneView> {
       child: Stack(
         children: [
           SketchCanvas(controller: widget.controller),
-          const Positioned(
+          Positioned(
             left: 8,
             top: 6,
-            child: Text('Sketch · base plane',
-                style: TextStyle(color: Colors.white38, fontSize: 11)),
+            child: Text('Sketch · ${widget.controller.active.name}',
+                style: const TextStyle(color: Colors.white38, fontSize: 11)),
           ),
         ],
       ),
     );
   }
 
-  Widget _controls(Decomposition decomp) {
-    final sel = _selected;
+  Widget _controls(_Scene scene) {
+    final sel = _selItem;
     final c = widget.controller;
-    final body = sel != null && sel < decomp.parts.length
-        ? Row(
-            children: [
-              IconButton(
-                tooltip: 'Back to assembly',
-                icon: const Icon(Icons.arrow_back, size: 18),
-                onPressed: () => setState(() => _selected = null),
-              ),
-              Text(decomp.parts[sel].name,
-                  style: const TextStyle(color: Colors.white, fontSize: 13)),
-              const SizedBox(width: 12),
-              const Text('Depth',
-                  style: TextStyle(color: Colors.white54, fontSize: 12)),
-              Expanded(
-                child: Slider(
-                  value: (c.regionDepths[sel] ?? c.active.depth).clamp(5, 400),
-                  min: 5,
-                  max: 400,
-                  onChanged: (v) => c.setRegionDepth(sel, v),
-                ),
-              ),
-              if (c.regionDepths.containsKey(sel))
-                IconButton(
-                  tooltip: 'Reset to base depth',
-                  icon: const Icon(Icons.restart_alt, size: 18),
-                  onPressed: () => c.clearRegionDepth(sel),
-                ),
-            ],
-          )
-        : Row(
-            children: [
-              Text(
-                '${decomp.parts.length} part${decomp.parts.length == 1 ? '' : 's'}'
-                ' · ${decomp.mates.length} mate${decomp.mates.length == 1 ? '' : 's'}'
-                '${decomp.parts.isEmpty ? '' : ' · tap a part'}',
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-              const SizedBox(width: 16),
-              const Icon(Icons.open_in_full, size: 16, color: Colors.white54),
-              Expanded(
-                child: Slider(
-                  value: _explode,
-                  onChanged: (v) => setState(() => _explode = v),
-                ),
-              ),
-              const Text('Depth',
-                  style: TextStyle(color: Colors.white54, fontSize: 12)),
-              SizedBox(
-                width: 160,
-                child: Slider(
-                  value: c.active.depth.clamp(5, 400),
-                  min: 5,
-                  max: 400,
-                  onChanged: (v) => c.setDepth(v),
-                ),
-              ),
-            ],
-          );
+    final Widget body;
+    if (sel != null && sel < scene.items.length) {
+      final region = scene.items[sel].region;
+      body = Row(children: [
+        IconButton(
+          tooltip: 'Deselect',
+          icon: const Icon(Icons.arrow_back, size: 18),
+          onPressed: () => setState(() {
+            _selItem = null;
+            _selFace = null;
+          }),
+        ),
+        Flexible(
+          child: Text(scene.items[sel].name,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 13)),
+        ),
+        const SizedBox(width: 12),
+        const Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12)),
+        Expanded(
+          child: Slider(
+            value: (c.active.regionDepths[region] ?? c.active.depth).clamp(5, 400),
+            min: 5,
+            max: 400,
+            onChanged: (v) => c.setRegionDepth(region, v),
+          ),
+        ),
+        if (c.active.regionDepths.containsKey(region))
+          IconButton(
+            tooltip: 'Reset to base depth',
+            icon: const Icon(Icons.restart_alt, size: 18),
+            onPressed: () => c.clearRegionDepth(region),
+          ),
+      ]);
+    } else {
+      body = Row(children: [
+        Flexible(
+          child: Text(
+            '${scene.items.length} part${scene.items.length == 1 ? '' : 's'}'
+            ' · ${scene.mates.length} mate${scene.mates.length == 1 ? '' : 's'}'
+            '${scene.isEmpty ? '' : ' · tap a part'}',
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+        ),
+        const SizedBox(width: 12),
+        const Icon(Icons.open_in_full, size: 16, color: Colors.white54),
+        Expanded(
+          child: Slider(
+            value: _explode,
+            onChanged: (v) => setState(() => _explode = v),
+          ),
+        ),
+        const Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12)),
+        Expanded(
+          child: Slider(
+            value: c.active.depth.clamp(5, 400),
+            min: 5,
+            max: 400,
+            onChanged: (v) => c.setDepth(v),
+          ),
+        ),
+      ]);
+    }
     return Container(
       color: const Color(0xFF161C22),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: body,
     );
   }
 }
 
-class _ScenePainter extends CustomPainter {
-  _ScenePainter(this.decomp, this.sketch, this.plane, this.cam, this.explode,
-      this.selected, this.palette);
+// --- Flattened multi-plane scene (derived; recomputed every build) ---
 
-  final Decomposition decomp;
-  final ParametricSketch sketch;
-  final SketchPlane plane;
+class _Item {
+  _Item(this.authored, this.region, this.solid, this.name, this.center);
+  final int authored; // index into controller.parts
+  final int region; // region index within that part's decomposition
+  final Solid solid; // in-place world solid
+  final String name;
+  final Vec3 center;
+}
+
+class _Mate {
+  _Mate(this.itemA, this.faceA, this.itemB, this.faceB);
+  final int itemA, faceA, itemB, faceB;
+}
+
+class _Scene {
+  _Scene(this.items, this.mates, this.center, this.radius);
+  final List<_Item> items;
+  final List<_Mate> mates;
+  final Vec3 center;
+  final double radius;
+
+  bool get isEmpty => items.isEmpty;
+
+  Vec3 explode(int i, double t) {
+    if (t <= 0) return const Vec3(0, 0, 0);
+    final dir = items[i].center - center;
+    final d = dir.length;
+    final unit = d < 1e-6 ? const Vec3(0, 0, 1) : dir * (1 / d);
+    return unit * (t * radius * 1.4);
+  }
+}
+
+/// Decomposes every part on its own plane and flattens into one scene.
+_Scene _buildScene(List<Part> parts) {
+  final items = <_Item>[];
+  final mates = <_Mate>[];
+  final index = <String, int>{}; // "authored:region" -> item index
+  for (var ai = 0; ai < parts.length; ai++) {
+    final p = parts[ai];
+    final d = decompose(p.sketch,
+        depth: p.depth, plane: p.plane, depthOverrides: p.regionDepths);
+    // No regions (imported mesh, or a circle-only sketch -> cylinder): show the
+    // part's own solid as a single body so nothing silently disappears.
+    if (d.parts.isEmpty) {
+      final s = p.buildSolid();
+      if (s != null) {
+        index['$ai:0'] = items.length;
+        items.add(_Item(ai, 0, s, p.name, s.centroid));
+      }
+      continue;
+    }
+    for (var ri = 0; ri < d.parts.length; ri++) {
+      final dp = d.parts[ri];
+      index['$ai:$ri'] = items.length;
+      final name = parts.length > 1 ? '${p.name} · ${dp.name}' : dp.name;
+      items.add(_Item(ai, ri, dp.solid, name, dp.center));
+    }
+    for (final m in d.mates) {
+      final a = index['$ai:${m.partA}'], b = index['$ai:${m.partB}'];
+      if (a != null && b != null) mates.add(_Mate(a, m.faceA, b, m.faceB));
+    }
+  }
+  if (items.isEmpty) return _Scene(const [], const [], const Vec3(0, 0, 0), 150);
+  var c = const Vec3(0, 0, 0);
+  for (final it in items) {
+    c = c + it.center;
+  }
+  c = c * (1.0 / items.length);
+  var r = 1.0;
+  for (final it in items) {
+    for (final v in it.solid.vertices) {
+      final dd = (v - c).length;
+      if (dd > r) r = dd;
+    }
+  }
+  return _Scene(items, mates, c, r);
+}
+
+class _ScenePainter extends CustomPainter {
+  _ScenePainter(this.scene, this.parts, this.cam, this.explode, this.selItem,
+      this.selFace, this.palette);
+
+  final _Scene scene;
+  final List<Part> parts;
   final Camera cam;
   final double explode;
-  final int? selected;
+  final int? selItem;
+  final int? selFace;
   final List<Color> palette;
 
   @override
   void paint(Canvas canvas, Size size) {
-    _drawPlaneAxes(canvas);
-
-    // Live master sketch on the plane (context alongside the 3D result).
-    final sketchPaint = Paint()
-      ..color = Colors.cyanAccent.shade700
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round;
-    for (final seg in sketch.segments) {
-      canvas.drawLine(cam.project(plane.to3d(sketch.points[seg.a])),
-          cam.project(plane.to3d(sketch.points[seg.b])), sketchPaint);
+    // Live sketches on their planes (the active part brighter).
+    for (var ai = 0; ai < parts.length; ai++) {
+      final p = parts[ai];
+      final paint = Paint()
+        ..color = Colors.cyanAccent.shade700.withValues(alpha: 0.7)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round;
+      for (final seg in p.sketch.segments) {
+        canvas.drawLine(cam.project(p.plane.to3d(p.sketch.points[seg.a])),
+            cam.project(p.plane.to3d(p.sketch.points[seg.b])), paint);
+      }
     }
 
-    // Decomposed parts: per-part wireframe shifted by its explode offset.
-    for (var pi = 0; pi < decomp.parts.length; pi++) {
-      final solid = decomp.parts[pi].solid;
-      final shift = decomp.explodeOffset(pi, explode);
-      final isSel = pi == selected;
+    // Parts (wireframe), shifted by explode.
+    for (var i = 0; i < scene.items.length; i++) {
+      final solid = scene.items[i].solid;
+      final shift = scene.explode(i, explode);
+      final isSel = i == selItem;
       final paint = Paint()
-        ..color = isSel ? Colors.white : palette[pi % palette.length]
+        ..color = isSel ? Colors.white : palette[i % palette.length]
         ..style = PaintingStyle.stroke
         ..strokeWidth = isSel ? 2.6 : 1.6
         ..strokeCap = StrokeCap.round;
@@ -290,36 +395,36 @@ class _ScenePainter extends CustomPainter {
         canvas.drawLine(cam.project(solid.vertices[e[0]] + shift),
             cam.project(solid.vertices[e[1]] + shift), paint);
       }
+      // Highlight the selected face (the candidate sketch plane).
+      if (isSel && selFace != null) {
+        final ring = solid.faces[selFace!];
+        final path = Path();
+        for (var k = 0; k < ring.length; k++) {
+          final pt = cam.project(solid.vertices[ring[k]] + shift);
+          k == 0 ? path.moveTo(pt.dx, pt.dy) : path.lineTo(pt.dx, pt.dy);
+        }
+        path.close();
+        canvas.drawPath(path, Paint()..color = Colors.white.withValues(alpha: 0.18));
+      }
     }
 
-    // Auto-captured mating surfaces: a white stub (centroid + normal) per side.
+    // Auto-captured mating surfaces.
     final mateDot = Paint()..color = Colors.white;
     final mateLine = Paint()
       ..color = Colors.white70
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
-    for (final m in decomp.mates) {
-      _drawConnector(canvas, m.partA, m.faceA, mateDot, mateLine);
-      _drawConnector(canvas, m.partB, m.faceB, mateDot, mateLine);
+    for (final m in scene.mates) {
+      _connector(canvas, m.itemA, m.faceA, mateDot, mateLine);
+      _connector(canvas, m.itemB, m.faceB, mateDot, mateLine);
     }
   }
 
-  void _drawPlaneAxes(Canvas canvas) {
-    final ext = decomp.isEmpty ? 120.0 : decomp.radius;
-    final axis = Paint()
-      ..color = Colors.white24
-      ..strokeWidth = 1;
-    canvas.drawLine(cam.project(plane.to3d(Offset(-ext, 0))),
-        cam.project(plane.to3d(Offset(ext, 0))), axis);
-    canvas.drawLine(cam.project(plane.to3d(Offset(0, -ext))),
-        cam.project(plane.to3d(Offset(0, ext))), axis);
-  }
-
-  void _drawConnector(Canvas canvas, int part, int face, Paint dot, Paint line) {
-    final solid = decomp.parts[part].solid;
-    final shift = decomp.explodeOffset(part, explode);
+  void _connector(Canvas canvas, int item, int face, Paint dot, Paint line) {
+    final solid = scene.items[item].solid;
+    final shift = scene.explode(item, explode);
     final origin = solid.faceCentroid(face) + shift;
-    final tip = origin + solid.faceNormal(face) * (decomp.radius * 0.12);
+    final tip = origin + solid.faceNormal(face) * (scene.radius * 0.12);
     final o = cam.project(origin);
     canvas.drawCircle(o, 3, dot);
     canvas.drawLine(o, cam.project(tip), line);

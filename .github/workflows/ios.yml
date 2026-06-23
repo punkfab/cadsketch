@@ -80,6 +80,15 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "$P8" > ~/private_keys/AuthKey_${KEY_ID}.p8
 
+      # Flutter skips CocoaPods when there are no plugin packages (this app is
+      # pure FFI), so the kernel pod is never installed and the C++ kernel never
+      # links in. Generate the Flutter xcconfig, then run pod install explicitly
+      # so the archive (which uses Runner.xcworkspace) includes the kernel.
+      - name: Install pods (explicit)
+        run: |
+          flutter build ios --config-only --release --no-codesign
+          cd ios && pod install
+
       - name: Build Flutter iOS (no codesign)
         run: |
           flutter build ios --release --no-codesign \

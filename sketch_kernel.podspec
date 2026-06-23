@@ -7,6 +7,13 @@
 # Source of truth stays in native/ (shared with the Linux harness). The pod
 # references it directly — no copies, no drift.
 #
+# IMPORTANT: this podspec lives at the REPO ROOT (not ios/) on purpose.
+# CocoaPods silently excludes source_files that live outside the pod's root
+# directory, so an ios/ podspec pointing at ../native/*.cpp produces an EMPTY
+# library (build succeeds, zero symbols). Keeping it at the root means native/
+# is inside the pod root and gets compiled. Referenced from ios/Podfile via
+# `pod 'sketch_kernel', :path => '..'`.
+#
 Pod::Spec.new do |s|
   s.name             = 'sketch_kernel'
   s.version          = '0.0.1'
@@ -17,9 +24,9 @@ Pod::Spec.new do |s|
   s.author           = { 'Dan Newcome' => 'djn125@yahoo.com' }
   s.source           = { :path => '.' }
 
-  # The .cpp/.h live one level up from ios/ (single source of truth).
-  s.source_files        = '../native/sketch_kernel.{cpp,h}'
-  s.public_header_files  = '../native/sketch_kernel.h'
+  # Paths are relative to this podspec (repo root) — native/ is inside it.
+  s.source_files         = 'native/sketch_kernel.{cpp,h}'
+  s.public_header_files  = 'native/sketch_kernel.h'
 
   s.requires_arc     = false
   s.platform         = :ios, '13.0'

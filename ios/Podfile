@@ -35,8 +35,10 @@ target 'Runner' do
   # The app has no plugin pods that require dynamic frameworks.
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
-  # The durable C++ geometry kernel, compiled into the app.
-  pod 'sketch_kernel', :path => '.'
+  # The durable C++ geometry kernel, compiled into the app. The podspec lives at
+  # the repo root (../) so native/*.cpp is inside the pod root and actually gets
+  # compiled — an ios/ podspec referencing ../native produces an empty library.
+  pod 'sketch_kernel', :path => '..'
 
   target 'RunnerTests' do
     inherit! :search_paths

@@ -160,6 +160,12 @@ increasing). ~15–20 min.
   the `sk_*` symbols are only called from Dart (`DynamicLibrary.process()`) and
   the linker would otherwise dead-strip them. No `use_frameworks!` (keeps pods
   as static libs so the `.a` exists).
+- **"Failed to lookup symbol sk_version" at runtime (build succeeds, app runs):**
+  iOS executables don't export statically-linked symbols into the dynamic symbol
+  table, so `dlsym`/`DynamicLibrary.process()` can't find them even though the
+  code is in the binary. Fix (in the Podfile `post_install`): add
+  `-Wl,-export_dynamic` to Runner's `OTHER_LDFLAGS`. `-force_load` keeps the
+  archive; `-export_dynamic` makes its globals dlsym-able. Both are required.
 
 ---
 

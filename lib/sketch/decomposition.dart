@@ -50,11 +50,16 @@ class Decomposition {
 
 /// Decomposes [sketch] into in-place extruded region parts with auto-mates.
 /// [names] optionally overrides the default "Part N" labels per region index.
+/// [depthOverrides] gives a per-region extrude depth (region index -> depth),
+/// falling back to [depth] — this is how an in-context part edit (drill in,
+/// change its thickness) stays associative: the divider faces still coincide
+/// regardless of depth, so the auto-mates survive.
 Decomposition decompose(
   ParametricSketch sketch, {
   required double depth,
   SketchPlane plane = SketchPlane.xy,
   Map<int, String>? names,
+  Map<int, double>? depthOverrides,
 }) {
   final set = findRegions(sketch);
   if (set.regions.isEmpty) {
@@ -63,7 +68,8 @@ Decomposition decompose(
 
   final parts = <DecomposedPart>[];
   for (var i = 0; i < set.regions.length; i++) {
-    final solid = extrudeOnPlane(set.regions[i].profile, plane, depth);
+    final d = depthOverrides?[i] ?? depth;
+    final solid = extrudeOnPlane(set.regions[i].profile, plane, d);
     parts.add(DecomposedPart(
         names?[i] ?? 'Part ${i + 1}', solid, solid.centroid));
   }

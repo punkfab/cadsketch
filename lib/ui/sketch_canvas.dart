@@ -264,6 +264,21 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Per-region extrude-depth overrides for the active part's decomposition,
+  /// keyed by region index. Set when drilling into a decomposed part and
+  /// changing its thickness; geometry is still recomputed from the master
+  /// sketch, so this is an associative in-context edit (see decompose()).
+  final Map<int, double> regionDepths = {};
+
+  void setRegionDepth(int region, double depth) {
+    regionDepths[region] = depth;
+    notifyListeners();
+  }
+
+  void clearRegionDepth(int region) {
+    if (regionDepths.remove(region) != null) notifyListeners();
+  }
+
   void addConnector(int faceIndex) {
     active.connectors.add(MateConnector(faceIndex));
     notifyListeners();

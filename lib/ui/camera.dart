@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 import 'dart:ui' show Offset, Size;
 
+import '../sketch/plane.dart';
 import '../sketch/solid.dart';
+import '../sketch/transform3.dart';
 
 /// Orthographic camera shared by the wireframe views and their hit-testing, so
 /// rendering and picking agree exactly. Built from a center + radius (auto-fit).
@@ -36,4 +38,28 @@ class Camera {
   }
 
   double depthOf(Vec3 v) => rotate(v - center).z;
+
+  /// Inverse of [project] for a chosen target plane: the world point on [plane]
+  /// that projects to screen point [s]. Orthographic, so we cast the view ray
+  /// (camera +z in world) through s and intersect [plane]; then map to the
+  /// plane's 2D coords. This is what turns a stroke drawn in the 3D scene into
+  /// sketch coordinates on the active plane.
+  Offset unprojectToPlane(Offset s, SketchPlane plane) {
+    final rx = (s.dx - origin.dx) / scale;
+    final ry = -(s.dy - origin.dy) / scale;
+    // Columns of the rotation matrix R (rotate of each world basis vector).
+    final c0 = rotate(const Vec3(1, 0, 0));
+    final c1 = rotate(const Vec3(0, 1, 0));
+    final c2 = rotate(const Vec3(0, 0, 1));
+    // World delta = Rᵀ·(rx, ry, t) = A + t·B (R orthonormal ⇒ R⁻¹ = Rᵀ).
+    final a = Vec3(c0.x * rx + c0.y * ry, c1.x * rx + c1.y * ry,
+        c2.x * rx + c2.y * ry);
+    final b = Vec3(c0.z, c1.z, c2.z); // view direction in world
+    final n = plane.normal;
+    final denom = dot(b, n);
+    final t = denom.abs() < 1e-9
+        ? 0.0
+        : -dot(center + a - plane.origin, n) / denom;
+    return plane.to2d(center + a + b * t);
+  }
 }

@@ -103,18 +103,25 @@ jobs:
             CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM=W527ZN3X52
 
-      # Ground-truth check: are the kernel symbols actually in the archived
-      # binary and exported for dlsym? Prints to the build log either way.
-      - name: Inspect kernel symbols (diagnostic)
+      # Ground-truth check: trace the kernel through every build layer.
+      - name: Inspect kernel build (diagnostic)
         run: |
+          set +e
+          echo "===== 1. Did pod install include sketch_kernel? ====="
+          grep -A2 -i "sketch_kernel" ios/Podfile.lock || echo "(sketch_kernel NOT in Podfile.lock)"
+          echo "===== 2. Was the .cpp compiled? (sketch_kernel.o objects) ====="
+          find ~/Library/Developer/Xcode/DerivedData "$PWD/build" -name 'sketch_kernel*.o' 2>/dev/null | head
+          echo "===== 3. Built archives + do THEY contain sk_ symbols? ====="
+          find ~/Library/Developer/Xcode/DerivedData "$PWD/build" -name 'libsketch_kernel.a' 2>/dev/null | while read f; do
+            echo "--- $f"; nm "$f" 2>/dev/null | grep -i "sk_version" | head -2 || echo "    (no sk_version in this .a)"
+          done
+          echo "===== 4. Is the pod in Runner's link flags? ====="
+          grep -riE "sketch_kernel|force_load|exported_symbols" "ios/Pods/Target Support Files/Pods-Runner/"*.xcconfig 2>/dev/null || echo "(nothing in Pods-Runner xcconfig)"
+          echo "===== 5. Final binary symbols ====="
           BIN="build/Runner.xcarchive/Products/Applications/Runner.app/Runner"
-          ls -la "$BIN" 2>/dev/null || { echo "archive binary missing"; find build/Runner.xcarchive -name Runner -type f 2>/dev/null; }
-          echo "=== present in binary at all? (nm) ==="
-          nm "$BIN" 2>/dev/null | grep -i "sk_version\|sk_create" || echo "(NONE — symbols not linked in)"
-          echo "=== defined global (nm -gU) ==="
-          nm -gU "$BIN" 2>/dev/null | grep -i "sk_" || echo "(NONE defined-global)"
-          echo "=== in exports trie (what dlsym sees) ==="
+          nm "$BIN" 2>/dev/null | grep -i "sk_version\|sk_create" || echo "(NONE in final binary)"
           xcrun dyld_info -exports "$BIN" 2>/dev/null | grep -i "sk_" || echo "(NONE in exports trie)"
+          true
 
       - name: Export and upload to TestFlight
         env:

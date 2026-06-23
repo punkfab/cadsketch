@@ -1,0 +1,51 @@
+name: iOS kernel diagnostic (no signing)
+
+# Cert-free way to debug the C++ kernel link on iOS: builds with --no-codesign
+# (no signing, no archive, no upload → no certificates created, nothing sent to
+# TestFlight) and dumps where sk_* symbols are (or aren't) through every layer.
+# Trigger manually from the Actions tab or: gh workflow run ios-diagnose.yml
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Kernel build diagnostic
+        run: |
+          set +e
+          echo "===== 1. sketch_kernel in Podfile.lock? ====="
+          grep -A2 -i "sketch_kernel" ios/Podfile.lock || echo "(NOT in Podfile.lock)"
+          echo "===== 2. was the .cpp compiled? (sketch_kernel*.o) ====="
+          find ~/Library/Developer/Xcode/DerivedData "$PWD/build" -name 'sketch_kernel*.o' 2>/dev/null | head
+          echo "===== 3. libsketch_kernel.a + does it contain sk_version? ====="
+          found=0
+          find ~/Library/Developer/Xcode/DerivedData "$PWD/build" -name 'libsketch_kernel.a' 2>/dev/null | while read f; do
+            found=1; echo "--- $f"; nm "$f" 2>/dev/null | grep -i "sk_version" | head -2 || echo "    (no sk_version in archive)"
+          done
+          echo "===== 4. pod listed in Pods-Runner link flags? ====="
+          grep -riE "sketch_kernel|force_load|exported_symbols" "ios/Pods/Target Support Files/Pods-Runner/"*.xcconfig 2>/dev/null || echo "(nothing referencing it)"
+          echo "===== 5. final --no-codesign binary ====="
+          BIN="build/ios/iphoneos/Runner.app/Runner"
+          ls -la "$BIN" 2>/dev/null || echo "(binary missing)"
+          nm "$BIN" 2>/dev/null | grep -i "sk_version\|sk_create" || echo "(NONE in binary)"
+          xcrun dyld_info -exports "$BIN" 2>/dev/null | grep -i "sk_" || echo "(NONE in exports trie)"
+          echo "===== 6. pods that DID build (sanity) ====="
+          ls "ios/Pods/Target Support Files/" 2>/dev/null
+          true

@@ -56,8 +56,15 @@ post_install do |installer|
       native_target.build_configurations.each do |config|
         ldflags = config.build_settings['OTHER_LDFLAGS'] || ['$(inherited)']
         ldflags = [ldflags] unless ldflags.is_a?(Array)
+        # 1) Keep the kernel archive — its sk_* symbols are only referenced from
+        #    Dart, so without this the linker dead-strips the whole archive.
         force = '-force_load "${PODS_CONFIGURATION_BUILD_DIR}/sketch_kernel/libsketch_kernel.a"'
         ldflags << force unless ldflags.include?(force)
+        # 2) Export the executable's global symbols into its dynamic symbol table
+        #    so DynamicLibrary.process()/dlsym can find sk_* at runtime. Without
+        #    this, statically-linked symbols aren't dlsym-able on iOS and you get
+        #    "Failed to lookup symbol 'sk_version'".
+        ldflags << '-Wl,-export_dynamic' unless ldflags.include?('-Wl,-export_dynamic')
         config.build_settings['OTHER_LDFLAGS'] = ldflags
       end
     end

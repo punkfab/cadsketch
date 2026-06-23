@@ -4,6 +4,7 @@ import 'ffi/sketch_kernel.dart';
 import 'sketch/mesh_import.dart';
 import 'ui/ai_panel.dart';
 import 'ui/assembly_view.dart';
+import 'ui/scene_view.dart';
 import 'ui/sketch_canvas.dart';
 import 'ui/solid_view.dart';
 
@@ -119,6 +120,13 @@ class _SketchHomeState extends State<SketchHome> {
             tooltip: 'Extrude closed profile',
             icon: const Icon(Icons.view_in_ar),
             onPressed: _extrude,
+          ),
+          IconButton(
+            tooltip: 'Decompose sketch into parts (region-partition)',
+            icon: const Icon(Icons.dashboard_customize_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => SceneView(controller: _controller)),
+            ),
           ),
           IconButton(
             tooltip: 'Assembly (mate parts)',

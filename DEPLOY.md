@@ -155,17 +155,42 @@ increasing). ~15–20 min.
   native kernel (`build_native.sh`, needs cmake+ninja) BEFORE `flutter test` —
   otherwise 33 tests fail with a missing-library error. Done in both
   `web.yml` and `ios.yml`.
-- The kernel pod (`ios/sketch_kernel.podspec`) compiles `../native/*.cpp`; the
-  Podfile `post_install` `-force_load`s `libsketch_kernel.a` into Runner because
-  the `sk_*` symbols are only called from Dart (`DynamicLibrary.process()`) and
-  the linker would otherwise dead-strip them. No `use_frameworks!` (keeps pods
-  as static libs so the `.a` exists).
+- **Flutter never runs `pod install` for this app** — it only runs CocoaPods when
+  there are plugin *packages*, and this app is pure FFI (zero plugins). So the
+  hand-written Podfile + kernel pod were silently ignored on every build (no
+  `ios/Podfile.lock`, no `ios/Pods/`), and the kernel was never compiled. CI must
+  run it explicitly: `flutter build ios --config-only --release --no-codesign`
+  (writes `Generated.xcconfig`) then `cd ios && pod install`, and archive the
+  **`.xcworkspace`** (not the bare `.xcodeproj`). Done in `ios.yml`.
+- The kernel pod (`sketch_kernel.podspec`, at the repo ROOT so `native/*.cpp` is
+  inside the pod root) builds as a static `libsketch_kernel.a`. No
+  `use_frameworks!` (keeps pods static so the `.a` exists).
 - **"Failed to lookup symbol sk_version" at runtime (build succeeds, app runs):**
-  iOS executables don't export statically-linked symbols into the dynamic symbol
-  table, so `dlsym`/`DynamicLibrary.process()` can't find them even though the
-  code is in the binary. Fix (in the Podfile `post_install`): add
-  `-Wl,-export_dynamic` to Runner's `OTHER_LDFLAGS`. `-force_load` keeps the
-  archive; `-export_dynamic` makes its globals dlsym-able. Both are required.
+  `DynamicLibrary.process()` → `dlsym(RTLD_DEFAULT, …)` reads the executable's
+  **dyld export trie**. Getting `sk_*` in there needs THREE settings on the
+  Runner target (all in the Podfile `post_install`), governing three stages — and
+  ALL THREE are required:
+  1. `-force_load "${PODS_CONFIGURATION_BUILD_DIR}/sketch_kernel/libsketch_kernel.a"`
+     in `OTHER_LDFLAGS` — the `sk_*` code is only referenced from Dart at runtime,
+     so without this the linker dead-strips the whole archive.
+  2. `EXPORTED_SYMBOLS_FILE = $(SRCROOT)/sk_exported_symbols.txt` — fed to the
+     linker as `-exported_symbols_list`, putting the 15 `sk_*` symbols in the
+     link-time export trie (iOS executables export nothing by default).
+  3. `STRIP_STYLE = non-global` — the archive's install action runs `strip`
+     (`STRIP_INSTALLED_PRODUCT=YES`), which with the default style removes ALL
+     global symbols and rebuilds the trie WITHOUT `sk_*`, undoing #2.
+     `EXPORTED_SYMBOLS_FILE` is fed only to ld, **not** to strip, so the link can
+     look perfect while the shipped binary loses the exports. `non-global`
+     (`strip -x`) keeps externals.
+  Earlier wrong guesses: `-Wl,-export_dynamic`, and the raw
+  `-Wl,-exported_symbols_list` flag (works for the link, strip undoes it).
+- **Debug this cert-free, and inspect the ARCHIVE binary.** `flutter build ios
+  --release --no-codesign` does NOT run the install-action strip → false green.
+  `ios-diagnose.yml` (manual `workflow_dispatch`, no certs) runs a real unsigned
+  `xcodebuild archive` (`CODE_SIGNING_ALLOWED=NO`) and dumps
+  `dyld_info -exports` on `build/Runner.xcarchive/.../Runner.app/Runner` — the
+  faithful check. Use it instead of burning signed builds (each signed CI build
+  mints a throwaway dev cert and you'll hit Apple's cert cap).
 
 ---
 

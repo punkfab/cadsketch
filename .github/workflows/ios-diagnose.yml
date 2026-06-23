@@ -24,6 +24,15 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Flutter skips CocoaPods when there are no plugin packages (this app is
+      # pure FFI), so our Podfile/kernel pod is never installed. Generate the
+      # Flutter xcconfig, then run pod install explicitly.
+      - name: Install pods (explicit)
+        run: |
+          flutter build ios --config-only --release --no-codesign
+          cd ios && pod install
+          echo "=== Podfile.lock after explicit install ==="; cat Podfile.lock | head -20
+
       - name: Build iOS (no codesign)
         run: flutter build ios --release --no-codesign
 

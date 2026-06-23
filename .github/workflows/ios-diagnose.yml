@@ -33,28 +33,41 @@ jobs:
           cd ios && pod install
           echo "=== Podfile.lock after explicit install ==="; cat Podfile.lock | head -20
 
-      - name: Build iOS (no codesign)
+      - name: Build Flutter iOS (no codesign)
         run: flutter build ios --release --no-codesign
+
+      # Archive WITHOUT signing (CODE_SIGNING_ALLOWED=NO mints no certificate and
+      # uploads nothing) so this faithfully runs the install action + strip — the
+      # exact step that drops symbols. A plain `flutter build` skips that strip
+      # and gives a false green, so we must inspect the *archive* binary.
+      - name: Archive (no signing)
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner -configuration Release \
+            -archivePath build/Runner.xcarchive archive \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_STYLE=Manual
 
       - name: Kernel build diagnostic
         run: |
           set +e
           echo "===== 1. sketch_kernel in Podfile.lock? ====="
           grep -A2 -i "sketch_kernel" ios/Podfile.lock || echo "(NOT in Podfile.lock)"
-          echo "===== 2. was the .cpp compiled? (sketch_kernel*.o) ====="
-          find ~/Library/Developer/Xcode/DerivedData "$PWD/build" -name 'sketch_kernel*.o' 2>/dev/null | head
+          echo "===== 2. how did strip run? (STRIP_STYLE / strip invocation) ====="
+          gs() { :; }
           echo "===== 3. libsketch_kernel.a + does it contain sk_version? ====="
-          found=0
           find ~/Library/Developer/Xcode/DerivedData "$PWD/build" -name 'libsketch_kernel.a' 2>/dev/null | while read f; do
-            found=1; echo "--- $f"; nm "$f" 2>/dev/null | grep -i "sk_version" | head -2 || echo "    (no sk_version in archive)"
+            echo "--- $f"; nm "$f" 2>/dev/null | grep -i "sk_version" | head -1 || echo "    (no sk_version in archive)"
           done
-          echo "===== 4. pod listed in Pods-Runner link flags? ====="
-          grep -riE "sketch_kernel|force_load|exported_symbols" "ios/Pods/Target Support Files/Pods-Runner/"*.xcconfig 2>/dev/null || echo "(nothing referencing it)"
-          echo "===== 5. final --no-codesign binary ====="
-          BIN="build/ios/iphoneos/Runner.app/Runner"
-          ls -la "$BIN" 2>/dev/null || echo "(binary missing)"
-          nm "$BIN" 2>/dev/null | grep -i "sk_version\|sk_create" || echo "(NONE in binary)"
+          echo "===== 4. ARCHIVE binary (the one that ships) ====="
+          BIN="build/Runner.xcarchive/Products/Applications/Runner.app/Runner"
+          ls -la "$BIN" 2>/dev/null || echo "(archive binary MISSING at expected path)"
+          echo "--- nm:"
+          nm "$BIN" 2>/dev/null | grep -i "sk_version\|sk_create" || echo "(NONE in archive binary via nm)"
+          echo "--- dyld_info -exports (what dlsym sees):"
           xcrun dyld_info -exports "$BIN" 2>/dev/null | grep -i "sk_" || echo "(NONE in exports trie)"
-          echo "===== 6. pods that DID build (sanity) ====="
-          ls "ios/Pods/Target Support Files/" 2>/dev/null
+          echo "===== 5. flutter-build binary (for comparison) ====="
+          FB="build/ios/iphoneos/Runner.app/Runner"
+          xcrun dyld_info -exports "$FB" 2>/dev/null | grep -i "sk_version" || echo "(NONE in flutter-build exports trie)"
           true

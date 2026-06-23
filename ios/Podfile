@@ -64,16 +64,23 @@ post_install do |installer|
         ldflags << force unless ldflags.include?(force)
         config.build_settings['OTHER_LDFLAGS'] = ldflags
 
-        # 2) Keep the kernel's sk_* symbols in the executable's export table so
-        #    DynamicLibrary.process()/dlsym resolves them at runtime. Use the
-        #    EXPORTED_SYMBOLS_FILE *build setting* — NOT a raw
-        #    -Wl,-exported_symbols_list flag. Xcode feeds this file to BOTH the
-        #    linker (-exported_symbols_list) AND the Release strip pass
-        #    (strip -s <file>). A raw linker flag only covers the link; the
-        #    subsequent strip — which by default removes all global symbols from
-        #    an app executable — then tears sk_* back out, leaving the export trie
-        #    empty and causing "Failed to lookup symbol 'sk_version'" on device.
+        # 2) Export ONLY the kernel's sk_* symbols from the executable, so
+        #    DynamicLibrary.process()/dlsym can resolve them at runtime.
+        #    EXPORTED_SYMBOLS_FILE feeds -exported_symbols_list to the LINKER
+        #    (the link-time export trie ends up containing exactly these symbols).
         config.build_settings['EXPORTED_SYMBOLS_FILE'] = '$(SRCROOT)/sk_exported_symbols.txt'
+
+        # 3) Survive the Release strip. The archive's install action runs
+        #    `strip` (STRIP_INSTALLED_PRODUCT=YES), and by default that strips ALL
+        #    global symbols from an app executable — undoing step 2 and emptying
+        #    the export trie (=> "Failed to lookup symbol 'sk_version'" on device,
+        #    even though the link was perfect). EXPORTED_SYMBOLS_FILE is NOT
+        #    passed to strip, only to ld. STRIP_STYLE=non-global makes strip keep
+        #    global/external symbols (strip -x), so the sk_* exports remain. (A
+        #    plain `flutter build` doesn't run this install-strip, so it can show
+        #    the symbols present while the *archive* drops them — verify on the
+        #    archive, not the flutter build.)
+        config.build_settings['STRIP_STYLE'] = 'non-global'
       end
     end
     aggregate_target.user_project.save

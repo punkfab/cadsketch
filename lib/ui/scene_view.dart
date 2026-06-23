@@ -7,16 +7,16 @@ import '../sketch/solid.dart';
 import 'camera.dart';
 import 'sketch_canvas.dart';
 
-// The unified 3D scene: sketch on a plane while orbiting, watch it extrude, and
-// "Decompose" the massing into one part per enclosed region with auto-captured
-// mating surfaces. Two input modes share the orbit camera:
-//   • Sketch mode — camera snaps face-on to the active plane; strokes are
-//     unprojected onto the plane and fed to the master sketch (recognized +
-//     solved by the existing 2D pipeline, kernel unchanged).
-//   • Orbit mode — drag to rotate, drag the explode slider to inspect parts.
-// The decomposition is recomputed from the live sketch every build, so drawing
-// (or editing a dimension/parameter) reflows the parts — associative by
-// recompute, no stored derived geometry.
+// The unified workspace: a split view with the 3D assembly (orbit) on one side
+// and the 2D sketch on the active plane on the other — no orbit/sketch mode
+// toggle. You draw with the full 2D tooling on the right; the left orbits the
+// extruded massing and its region-partition decomposition, recomputed from the
+// live sketch every build (associative). Tap a part in 3D to drill in and edit
+// its own depth.
+//
+// Phase: the active plane is the base XY plane. Selecting a body FACE to set the
+// sketch plane (true multi-plane / "rough 3D by construction") is the next
+// increment — it needs the multi-sketch SketchOnPlane model.
 class SceneView extends StatefulWidget {
   const SceneView({super.key, required this.controller});
 
@@ -27,19 +27,12 @@ class SceneView extends StatefulWidget {
 }
 
 class _SceneViewState extends State<SceneView> {
-  // Master sketch plane (region-partition Phase 1 sketches on base XY).
   static const _plane = SketchPlane.xy;
 
   double _yaw = 0.6;
   double _pitch = -0.5;
   double _explode = 0;
-  bool _sketchMode = true;
-  int? _selected; // region/part index drilled into (orbit mode)
-
-  // In-progress stroke (screen-space points) while drawing.
-  List<Offset>? _stroke;
-
-  static const double _tapSlop = 10.0;
+  int? _selected; // part drilled into
 
   static const _palette = [
     Color(0xFF4DD0E1),
@@ -57,15 +50,16 @@ class _SceneViewState extends State<SceneView> {
         _pitch = (_pitch + d.dy * 0.01).clamp(-1.5, 1.5);
       });
 
-  // Face-on angles for sketching on the base XY plane (looking down +Z).
-  void _toggleSketch() => setState(() {
-        _sketchMode = !_sketchMode;
-        _selected = null;
-        if (_sketchMode) {
-          _yaw = 0;
-          _pitch = 0;
-        }
-      });
+  Camera _camera(Size size, Decomposition decomp) {
+    final empty = decomp.isEmpty;
+    return Camera(
+      size: size,
+      center: empty ? const Vec3(0, 0, 0) : decomp.center,
+      radius: empty ? 150 : decomp.radius * (1 + _explode * 1.4) + 1,
+      yaw: _yaw,
+      pitch: _pitch,
+    );
+  }
 
   /// Front-most part whose projected solid contains [p], or null (deselect).
   int? _partAt(Offset p, Decomposition decomp, Camera cam) {
@@ -103,83 +97,85 @@ class _SceneViewState extends State<SceneView> {
     return inside;
   }
 
-  Camera _camera(Size size, Decomposition decomp) {
-    final empty = decomp.isEmpty;
-    return Camera(
-      size: size,
-      center: empty ? const Vec3(0, 0, 0) : decomp.center,
-      radius: empty ? 150 : decomp.radius * (1 + _explode * 1.4) + 1,
-      yaw: _sketchMode ? 0 : _yaw,
-      pitch: _sketchMode ? 0 : _pitch,
-    );
-  }
-
-  void _endStroke(Size size, Decomposition decomp) {
-    final stroke = _stroke;
-    setState(() => _stroke = null);
-    if (stroke == null || stroke.length < 2) return;
-    final extent =
-        stroke.fold(0.0, (m, p) => (p - stroke.first).distance.clamp(m, 1e9));
-    if (extent < _tapSlop) return; // tap: dimension editing on-plane is future
-    final cam = _camera(size, decomp);
-    final planePts = [for (final s in stroke) cam.unprojectToPlane(s, _plane)];
-    widget.controller.addStroke(planePts);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sketch & decompose'),
-        actions: [
-          IconButton(
-            tooltip: _sketchMode ? 'Sketch mode (drawing)' : 'Orbit mode',
-            isSelected: _sketchMode,
-            icon: Icon(_sketchMode ? Icons.edit : Icons.threed_rotation),
-            onPressed: _toggleSketch,
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Workspace · sketch + assembly')),
       body: AnimatedBuilder(
         animation: widget.controller,
         builder: (context, _) {
           final part = widget.controller.active;
           final decomp = decompose(part.sketch,
               depth: part.depth, depthOverrides: widget.controller.regionDepths);
-          return Column(
-            children: [
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final size = constraints.biggest;
-                    final cam = _camera(size, decomp);
-                    final painter = _ScenePainter(decomp, part.sketch, _plane,
-                        cam, _explode, _stroke, _selected, _palette);
-                    final canvas = CustomPaint(painter: painter, size: Size.infinite);
-                    return _sketchMode
-                        ? Listener(
-                            behavior: HitTestBehavior.opaque,
-                            onPointerDown: (e) =>
-                                setState(() => _stroke = [e.localPosition]),
-                            onPointerMove: (e) =>
-                                setState(() => _stroke?.add(e.localPosition)),
-                            onPointerUp: (e) => _endStroke(size, decomp),
-                            onPointerCancel: (e) => _endStroke(size, decomp),
-                            child: canvas,
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 720;
+              final pane3d = _pane3d(decomp);
+              final pane2d = _pane2d();
+              return Column(
+                children: [
+                  Expanded(
+                    child: wide
+                        ? Row(
+                            children: [
+                              Expanded(flex: 11, child: pane3d),
+                              const VerticalDivider(width: 1),
+                              Expanded(flex: 9, child: pane2d),
+                            ],
                           )
-                        : GestureDetector(
-                            onPanUpdate: (e) => _orbit(e.delta),
-                            onTapUp: (e) => setState(() =>
-                                _selected = _partAt(e.localPosition, decomp, cam)),
-                            child: canvas,
-                          );
-                  },
-                ),
-              ),
-              _controls(decomp),
-            ],
+                        : Column(
+                            children: [
+                              Expanded(child: pane3d),
+                              const Divider(height: 1),
+                              Expanded(child: pane2d),
+                            ],
+                          ),
+                  ),
+                  _controls(decomp),
+                ],
+              );
+            },
           );
         },
+      ),
+    );
+  }
+
+  Widget _pane3d(Decomposition decomp) {
+    return Container(
+      color: const Color(0xFF0E1216),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = constraints.biggest;
+          final cam = _camera(size, decomp);
+          return GestureDetector(
+            onPanUpdate: (e) => _orbit(e.delta),
+            onTapUp: (e) =>
+                setState(() => _selected = _partAt(e.localPosition, decomp, cam)),
+            child: CustomPaint(
+              painter: _ScenePainter(decomp, widget.controller.active.sketch,
+                  _plane, cam, _explode, _selected, _palette),
+              size: Size.infinite,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _pane2d() {
+    return Container(
+      color: const Color(0xFF101418),
+      child: Stack(
+        children: [
+          SketchCanvas(controller: widget.controller),
+          const Positioned(
+            left: 8,
+            top: 6,
+            child: Text('Sketch · base plane',
+                style: TextStyle(color: Colors.white38, fontSize: 11)),
+          ),
+        ],
       ),
     );
   }
@@ -187,9 +183,7 @@ class _SceneViewState extends State<SceneView> {
   Widget _controls(Decomposition decomp) {
     final sel = _selected;
     final c = widget.controller;
-    final body = sel != null && !_sketchMode && sel < decomp.parts.length
-        // Drilled into a part: edit its own depth (overrides the base depth);
-        // geometry still rebuilds from the master sketch (associative).
+    final body = sel != null && sel < decomp.parts.length
         ? Row(
             children: [
               IconButton(
@@ -221,11 +215,9 @@ class _SceneViewState extends State<SceneView> {
         : Row(
             children: [
               Text(
-                _sketchMode
-                    ? 'Draw on the plane'
-                    : '${decomp.parts.length} part${decomp.parts.length == 1 ? '' : 's'}'
-                        ' · ${decomp.mates.length} mate${decomp.mates.length == 1 ? '' : 's'}'
-                        '${decomp.parts.isEmpty ? '' : ' · tap a part'}',
+                '${decomp.parts.length} part${decomp.parts.length == 1 ? '' : 's'}'
+                ' · ${decomp.mates.length} mate${decomp.mates.length == 1 ? '' : 's'}'
+                '${decomp.parts.isEmpty ? '' : ' · tap a part'}',
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
               const SizedBox(width: 16),
@@ -233,8 +225,7 @@ class _SceneViewState extends State<SceneView> {
               Expanded(
                 child: Slider(
                   value: _explode,
-                  onChanged:
-                      _sketchMode ? null : (v) => setState(() => _explode = v),
+                  onChanged: (v) => setState(() => _explode = v),
                 ),
               ),
               const Text('Depth',
@@ -260,14 +251,13 @@ class _SceneViewState extends State<SceneView> {
 
 class _ScenePainter extends CustomPainter {
   _ScenePainter(this.decomp, this.sketch, this.plane, this.cam, this.explode,
-      this.stroke, this.selected, this.palette);
+      this.selected, this.palette);
 
   final Decomposition decomp;
   final ParametricSketch sketch;
   final SketchPlane plane;
   final Camera cam;
   final double explode;
-  final List<Offset>? stroke;
   final int? selected;
   final List<Color> palette;
 
@@ -275,20 +265,15 @@ class _ScenePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     _drawPlaneAxes(canvas);
 
-    // Live master sketch on the plane (so drawing shows immediately, even
-    // before it closes into extrudable regions).
+    // Live master sketch on the plane (context alongside the 3D result).
     final sketchPaint = Paint()
-      ..color = Colors.cyanAccent.shade400
+      ..color = Colors.cyanAccent.shade700
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
+      ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
-    final node = Paint()..color = Colors.cyanAccent.shade100;
     for (final seg in sketch.segments) {
       canvas.drawLine(cam.project(plane.to3d(sketch.points[seg.a])),
           cam.project(plane.to3d(sketch.points[seg.b])), sketchPaint);
-    }
-    for (final p in sketch.points) {
-      canvas.drawCircle(cam.project(plane.to3d(p)), 3, node);
     }
 
     // Decomposed parts: per-part wireframe shifted by its explode offset.
@@ -317,24 +302,8 @@ class _ScenePainter extends CustomPainter {
       _drawConnector(canvas, m.partA, m.faceA, mateDot, mateLine);
       _drawConnector(canvas, m.partB, m.faceB, mateDot, mateLine);
     }
-
-    // In-progress stroke (raw screen space).
-    final s = stroke;
-    if (s != null && s.length >= 2) {
-      final raw = Paint()
-        ..color = Colors.blueGrey.shade300
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..strokeCap = StrokeCap.round;
-      final path = Path()..moveTo(s.first.dx, s.first.dy);
-      for (var i = 1; i < s.length; i++) {
-        path.lineTo(s[i].dx, s[i].dy);
-      }
-      canvas.drawPath(path, raw);
-    }
   }
 
-  // Faint origin axes of the active plane for orientation while orbiting.
   void _drawPlaneAxes(Canvas canvas) {
     final ext = decomp.isEmpty ? 120.0 : decomp.radius;
     final axis = Paint()

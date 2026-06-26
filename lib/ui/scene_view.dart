@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../sketch/decomposition.dart';
@@ -27,6 +28,7 @@ class _SceneViewState extends State<SceneView> {
   double _yaw = 0.6;
   double _pitch = -0.5;
   double _explode = 0;
+  double _zoom = 1; // scroll-wheel zoom (shrinks the camera radius)
   int? _selItem; // selected scene item (flattened index)
   int? _selFace; // selected face on that item (for "sketch on face")
   int? _hovItem; // face under the cursor (hover preview of what a tap selects)
@@ -51,10 +53,15 @@ class _SceneViewState extends State<SceneView> {
   Camera _camera(Size size, _Scene scene) => Camera(
         size: size,
         center: scene.center,
-        radius: scene.radius * (1 + _explode * 1.4) + 1,
+        radius: (scene.radius * (1 + _explode * 1.4) + 1) / _zoom,
         yaw: _yaw,
         pitch: _pitch,
       );
+
+  // Scroll up (negative delta) zooms in. Clamped so you can't lose the model.
+  void _zoomBy(double dy) => setState(() {
+        _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.2, 12.0);
+      });
 
   ({int item, int face})? _hit(Offset p, _Scene scene, Camera cam) {
     int? bi, bf;
@@ -182,16 +189,21 @@ class _SceneViewState extends State<SceneView> {
           final cam = _camera(size, scene);
           return Stack(
             children: [
-              MouseRegion(
-                onHover: (e) => _hover(e.localPosition, scene, cam),
-                onExit: (_) => _clearHover(),
-                child: GestureDetector(
-                  onPanUpdate: (e) => _orbit(e.delta),
-                  onTapUp: (e) => _tap(e.localPosition, scene, cam),
-                  child: CustomPaint(
-                    painter: _ScenePainter(scene, widget.controller.parts, cam,
-                        _explode, _selItem, _selFace, _hovItem, _hovFace, _palette),
-                    size: Size.infinite,
+              Listener(
+                onPointerSignal: (e) {
+                  if (e is PointerScrollEvent) _zoomBy(e.scrollDelta.dy);
+                },
+                child: MouseRegion(
+                  onHover: (e) => _hover(e.localPosition, scene, cam),
+                  onExit: (_) => _clearHover(),
+                  child: GestureDetector(
+                    onPanUpdate: (e) => _orbit(e.delta),
+                    onTapUp: (e) => _tap(e.localPosition, scene, cam),
+                    child: CustomPaint(
+                      painter: _ScenePainter(scene, widget.controller.parts, cam,
+                          _explode, _selItem, _selFace, _hovItem, _hovFace, _palette),
+                      size: Size.infinite,
+                    ),
                   ),
                 ),
               ),

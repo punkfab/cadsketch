@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -19,19 +20,27 @@ class SketchCanvas extends StatefulWidget {
 
   final SketchController controller;
 
-  /// Pan offset (screen = model + offset) that centers a face sketch's
-  /// reference outline in the pane, so drawing lands on the face. Zero for
-  /// base-plane sketches — preserving the legacy "screen pixels == world units"
-  /// behavior and leaving existing sketches unchanged.
-  static Offset viewOffset(Size size, List<Offset>? reference) {
-    if (reference == null || reference.isEmpty) return Offset.zero;
+  /// The model point that should sit at the pane center (and stays fixed under
+  /// zoom): a face sketch's reference-outline centroid, else the pane center
+  /// itself (which keeps base-plane sketches at "screen pixels == world units"
+  /// when zoom == 1).
+  static Offset anchorModel(Size size, List<Offset>? reference) {
+    final paneCenter = Offset(size.width / 2, size.height / 2);
+    if (reference == null || reference.isEmpty) return paneCenter;
     var cx = 0.0, cy = 0.0;
     for (final p in reference) {
       cx += p.dx;
       cy += p.dy;
     }
-    final center = Offset(cx / reference.length, cy / reference.length);
-    return Offset(size.width / 2, size.height / 2) - center;
+    return Offset(cx / reference.length, cy / reference.length);
+  }
+
+  /// Pan offset at zoom 1 (screen = model + offset) that centers a face
+  /// sketch's outline; zero for base-plane sketches. (Kept for clarity/tests:
+  /// equals paneCenter - anchorModel.)
+  static Offset viewOffset(Size size, List<Offset>? reference) {
+    return Offset(size.width / 2, size.height / 2) -
+        anchorModel(size, reference);
   }
 
   @override
@@ -59,12 +68,18 @@ class _SketchCanvasState extends State<SketchCanvas> {
   Offset? _downPos;
   bool _dragMoved = false;
 
-  // Pan that maps model (plane-local) coords to screen; set each build from the
-  // active part's reference loop. Geometry is stored/edited in model coords.
-  Offset _viewOffset = Offset.zero;
-  Offset _toModel(Offset screen) => screen - _viewOffset;
+  // View transform: screen = model * _zoom + _pan. Geometry is stored/edited in
+  // model coords; _pan/_zoom are recomputed each build (_pan also depends on the
+  // active part's reference loop, to center a face sketch). _zoom is scroll-wheel.
+  double _zoom = 1;
+  Offset _pan = Offset.zero;
+  Offset _toModel(Offset screen) => (screen - _pan) / _zoom;
 
   final _focus = FocusNode();
+
+  void _zoomBy(double dy) => setState(() {
+        _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.25, 12.0);
+      });
 
   /// Movement below this (logical px) counts as a tap, not a stroke/drag.
   /// Generous enough to absorb stylus jitter on a tap.
@@ -261,12 +276,19 @@ class _SketchCanvasState extends State<SketchCanvas> {
           onPointerMove: (e) => _onMove(e.localPosition),
           onPointerUp: (e) => _onUp(),
           onPointerCancel: (e) => _onUp(),
+          onPointerSignal: (e) {
+            if (e is PointerScrollEvent) _zoomBy(e.scrollDelta.dy);
+          },
           child: AnimatedBuilder(
             animation: widget.controller,
             builder: (context, _) {
               final reference = widget.controller.active.referenceLoop;
-              _viewOffset =
-                  SketchCanvas.viewOffset(constraints.biggest, reference);
+              // Anchor the centering point at the pane center; zoom about it.
+              final anchor =
+                  SketchCanvas.anchorModel(constraints.biggest, reference);
+              final paneCenter = Offset(
+                  constraints.maxWidth / 2, constraints.maxHeight / 2);
+              _pan = paneCenter - anchor * _zoom;
               final sel = _sel;
               final segHi = _selected ??
                   (sel?.kind == _SelKind.segment ? sel!.index : null);
@@ -277,7 +299,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
                 children: [
                   CustomPaint(
                     painter: _SketchPainter(widget.controller, _active, segHi,
-                        circHi, ptHi, _viewOffset, reference),
+                        circHi, ptHi, _pan, _zoom, reference),
                     size: Size.infinite,
                   ),
                   if (sel != null) _selectionBar(sel),
@@ -537,14 +559,15 @@ class SketchController extends ChangeNotifier {
 
 class _SketchPainter extends CustomPainter {
   _SketchPainter(this.controller, this.active, this.selected,
-      this.selectedCircle, this.selectedPoint, this.viewOffset, this.reference);
+      this.selectedCircle, this.selectedPoint, this.pan, this.zoom, this.reference);
 
   final SketchController controller;
   final List<Offset>? active;
   final int? selected;
   final int? selectedCircle;
   final int? selectedPoint;
-  final Offset viewOffset;
+  final Offset pan;
+  final double zoom;
   final List<Offset>? reference; // parent face outline (guide), in model coords
 
   static const _glyphColor = Color(0xFFFFC857);
@@ -552,7 +575,8 @@ class _SketchPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     canvas.save();
-    canvas.translate(viewOffset.dx, viewOffset.dy); // model coords -> screen
+    canvas.translate(pan.dx, pan.dy); // model coords -> screen
+    canvas.scale(zoom);
 
     // Face guide: the outline of the face this sketch sits on, so you can see
     // where you're drawing relative to the part.

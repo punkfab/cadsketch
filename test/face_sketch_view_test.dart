@@ -35,4 +35,36 @@ void main() {
     final model = centerScreen - off;
     expect((model - const Offset(50, 50)).distance, lessThan(1e-9));
   });
+
+  test('anchorModel: pane center for base planes, face centroid for faces', () {
+    const size = Size(600, 400);
+    expect(SketchCanvas.anchorModel(size, null), const Offset(300, 200));
+    const loop = [
+      Offset(0, 0),
+      Offset(100, 0),
+      Offset(100, 100),
+      Offset(0, 100),
+    ];
+    expect(SketchCanvas.anchorModel(size, loop), const Offset(50, 50));
+  });
+
+  test('zoom keeps the anchor at the pane center (drawing there stays on face)',
+      () {
+    const size = Size(600, 400);
+    const loop = [
+      Offset(0, 0),
+      Offset(100, 0),
+      Offset(100, 100),
+      Offset(0, 100),
+    ];
+    final anchor = SketchCanvas.anchorModel(size, loop); // (50, 50)
+    const paneCenter = Offset(300, 200);
+    for (final zoom in [0.5, 1.0, 3.0]) {
+      // Mirrors the widget's transform: pan = paneCenter - anchor*zoom,
+      // model = (screen - pan) / zoom.
+      final pan = paneCenter - anchor * zoom;
+      final model = (paneCenter - pan) / zoom;
+      expect((model - anchor).distance, lessThan(1e-9));
+    }
+  });
 }

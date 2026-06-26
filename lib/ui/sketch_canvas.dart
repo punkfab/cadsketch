@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../sketch/assembly.dart';
 import '../sketch/beautify.dart';
@@ -22,24 +23,81 @@ class SketchCanvas extends StatefulWidget {
   State<SketchCanvas> createState() => _SketchCanvasState();
 }
 
+/// What the user currently has selected, for delete / edit affordances.
+enum _SelKind { point, segment, circle }
+
+class _Selection {
+  const _Selection(this.kind, this.index);
+  final _SelKind kind;
+  final int index;
+}
+
 class _SketchCanvasState extends State<SketchCanvas> {
   List<Offset>? _active;
   int? _selected; // segment whose dimension dialog is open (highlighted)
   int? _selectedCircle; // decoration index of circle being edited
+  _Selection? _sel; // the persistently selected element (delete/edit target)
 
-  /// Movement below this (logical px) counts as a tap, not a stroke. Generous
-  /// enough to absorb stylus jitter on a tap.
+  // Vertex-drag gesture: the point grabbed on press, and whether it has moved
+  // past the tap threshold (a press that doesn't move just selects the vertex).
+  int? _dragPoint;
+  Offset? _downPos;
+  bool _dragMoved = false;
+
+  final _focus = FocusNode();
+
+  /// Movement below this (logical px) counts as a tap, not a stroke/drag.
+  /// Generous enough to absorb stylus jitter on a tap.
   static const double _tapSlop = 10.0;
 
-  void _start(Offset p) => setState(() => _active = [p]);
-  void _extend(Offset p) => setState(() => _active?.add(p));
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _onDown(Offset p) {
+    _downPos = p;
+    _dragMoved = false;
+    _focus.requestFocus(); // so Delete/Backspace reaches us
+    final pi = widget.controller.model.hitTestPoint(p);
+    if (pi != null) {
+      _dragPoint = pi; // grab the vertex; don't start a stroke
+      return;
+    }
+    setState(() => _active = [p]); // begin a freehand stroke
+  }
+
+  void _onMove(Offset p) {
+    if (_dragPoint != null) {
+      if (!_dragMoved &&
+          (_downPos == null || (p - _downPos!).distance < _tapSlop)) {
+        return; // still within tap slop — not a drag yet
+      }
+      _dragMoved = true;
+      widget.controller.movePoint(_dragPoint!, p); // live re-solve
+      return;
+    }
+    setState(() => _active?.add(p));
+  }
+
+  void _onUp() {
+    final dp = _dragPoint;
+    if (dp != null) {
+      _dragPoint = null;
+      // A press on a vertex (moved or not) leaves it selected.
+      setState(() => _sel = _Selection(_SelKind.point, dp));
+      return;
+    }
+    _end();
+  }
 
   void _end() {
     final stroke = _active;
     setState(() => _active = null);
     if (stroke == null || stroke.isEmpty) return;
 
-    // Tap (little movement) → maybe edit a dimension; otherwise it's a stroke.
+    // Tap (little movement) → select / edit; otherwise it's a drawn stroke.
     final extent =
         stroke.fold(0.0, (m, p) => (p - stroke.first).distance.clamp(m, 1e9));
     if (extent < _tapSlop) {
@@ -48,19 +106,53 @@ class _SketchCanvasState extends State<SketchCanvas> {
     }
     if (stroke.length >= 2) {
       widget.controller.addStroke(stroke);
+      setState(() => _sel = null); // drawing clears the selection
     }
   }
 
   void _handleTap(Offset p) {
     final m = widget.controller.model;
-    // Prefer the dimension label, but fall back to tapping anywhere on the edge.
-    final si = m.hitTestDimension(p) ?? m.hitTestSegment(p);
+    // The dimension label is a precise target → open its editor directly.
+    final di = m.hitTestDimension(p);
+    if (di != null) {
+      _editDimension(di);
+      return;
+    }
+    // Otherwise a tap anywhere on an edge / circle selects it (vertices are
+    // handled on press, in _onDown).
+    final si = m.hitTestSegment(p);
     if (si != null) {
-      _editDimension(si);
+      setState(() => _sel = _Selection(_SelKind.segment, si));
       return;
     }
     final ci = _hitTestCircle(p);
-    if (ci != null) _editCircleRadius(ci);
+    if (ci != null) {
+      setState(() => _sel = _Selection(_SelKind.circle, ci));
+      return;
+    }
+    setState(() => _sel = null); // tapped empty space → clear
+  }
+
+  void _onKey(KeyEvent e) {
+    if (e is! KeyDownEvent) return;
+    if (e.logicalKey == LogicalKeyboardKey.delete ||
+        e.logicalKey == LogicalKeyboardKey.backspace) {
+      _deleteSelection();
+    }
+  }
+
+  void _deleteSelection() {
+    final sel = _sel;
+    if (sel == null) return;
+    switch (sel.kind) {
+      case _SelKind.point:
+        widget.controller.deletePoint(sel.index);
+      case _SelKind.segment:
+        widget.controller.deleteSegment(sel.index);
+      case _SelKind.circle:
+        widget.controller.deleteDecoration(sel.index);
+    }
+    setState(() => _sel = null);
   }
 
   /// Decoration index of a circle whose outline is near [p], or null.
@@ -138,18 +230,77 @@ class _SketchCanvasState extends State<SketchCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (e) => _start(e.localPosition),
-      onPointerMove: (e) => _extend(e.localPosition),
-      onPointerUp: (e) => _end(),
-      onPointerCancel: (e) => _end(),
-      child: AnimatedBuilder(
-        animation: widget.controller,
-        builder: (context, _) => CustomPaint(
-          painter: _SketchPainter(
-              widget.controller, _active, _selected, _selectedCircle),
-          size: Size.infinite,
+    final sel = _sel;
+    final segHi =
+        _selected ?? (sel?.kind == _SelKind.segment ? sel!.index : null);
+    final circHi =
+        _selectedCircle ?? (sel?.kind == _SelKind.circle ? sel!.index : null);
+    final ptHi = sel?.kind == _SelKind.point ? sel!.index : null;
+    return KeyboardListener(
+      focusNode: _focus,
+      onKeyEvent: _onKey,
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (e) => _onDown(e.localPosition),
+        onPointerMove: (e) => _onMove(e.localPosition),
+        onPointerUp: (e) => _onUp(),
+        onPointerCancel: (e) => _onUp(),
+        child: AnimatedBuilder(
+          animation: widget.controller,
+          builder: (context, _) => Stack(
+            children: [
+              CustomPaint(
+                painter: _SketchPainter(
+                    widget.controller, _active, segHi, circHi, ptHi),
+                size: Size.infinite,
+              ),
+              if (sel != null) _selectionBar(sel),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Floating action bar for the current selection: delete it, and (for a
+  /// segment/circle) jump to its dimension editor.
+  Widget _selectionBar(_Selection sel) {
+    final label = switch (sel.kind) {
+      _SelKind.point => 'Point',
+      _SelKind.segment => 'Line',
+      _SelKind.circle => 'Circle',
+    };
+    return Positioned(
+      right: 8,
+      top: 6,
+      child: Material(
+        color: const Color(0xE6161C22),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 12, right: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              if (sel.kind == _SelKind.segment)
+                TextButton(
+                  onPressed: () => _editDimension(sel.index),
+                  child: const Text('Dimension…'),
+                ),
+              if (sel.kind == _SelKind.circle)
+                TextButton(
+                  onPressed: () => _editCircleRadius(sel.index),
+                  child: const Text('Radius…'),
+                ),
+              IconButton(
+                tooltip: 'Delete (Del)',
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: Colors.redAccent,
+                onPressed: _deleteSelection,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -265,6 +416,56 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Direct manipulation: drag a vertex, delete geometry / parts ---
+
+  /// Drags the active part's vertex [pi] to [to] (live constraint re-solve).
+  void movePoint(int pi, Offset to) {
+    model.dragPoint(pi, to);
+    notifyListeners();
+  }
+
+  void deleteSegment(int si) {
+    model.removeSegment(si);
+    notifyListeners();
+  }
+
+  void deletePoint(int pi) {
+    model.removePoint(pi);
+    notifyListeners();
+  }
+
+  void deleteDecoration(int di) {
+    if (di < 0 || di >= decorations.length) return;
+    decorations.removeAt(di);
+    notifyListeners();
+  }
+
+  /// Removes a whole part (body). The last part isn't removed but reset, so the
+  /// workspace always has one active sketch. Mates referencing the removed part
+  /// are dropped and the rest reindexed.
+  void removePart(int index) {
+    if (index < 0 || index >= parts.length) return;
+    if (parts.length == 1) {
+      parts[0] = Part('Part 1');
+      activeIndex = 0;
+      mates.clear();
+      notifyListeners();
+      return;
+    }
+    parts.removeAt(index);
+    final kept = <Mate>[
+      for (final m in mates)
+        if (m.partA != index && m.partB != index)
+          Mate(m.partA > index ? m.partA - 1 : m.partA, m.connectorA,
+              m.partB > index ? m.partB - 1 : m.partB, m.connectorB)
+    ];
+    mates
+      ..clear()
+      ..addAll(kept);
+    if (activeIndex >= parts.length) activeIndex = parts.length - 1;
+    notifyListeners();
+  }
+
   /// Sets a per-region extrude-depth override on the active part (drilling into
   /// a region and changing its thickness). Associative — see decompose().
   void setRegionDepth(int region, double depth) {
@@ -303,12 +504,14 @@ class SketchController extends ChangeNotifier {
 }
 
 class _SketchPainter extends CustomPainter {
-  _SketchPainter(this.controller, this.active, this.selected, this.selectedCircle);
+  _SketchPainter(this.controller, this.active, this.selected,
+      this.selectedCircle, this.selectedPoint);
 
   final SketchController controller;
   final List<Offset>? active;
   final int? selected;
   final int? selectedCircle;
+  final int? selectedPoint;
 
   static const _glyphColor = Color(0xFFFFC857);
 
@@ -385,11 +588,17 @@ class _SketchPainter extends CustomPainter {
         canvas.drawLine(m.points[s.a], m.points[s.b], paint);
       }
     }
-    // Point nodes; shared points (degree >= 2) get a coincident ring.
+    // Point nodes; shared points (degree >= 2) get a coincident ring; the
+    // selected vertex gets an accent ring (the drag/delete handle).
+    final selectedRing = Paint()
+      ..color = _glyphColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
     for (var i = 0; i < m.points.length; i++) {
       final p = m.points[i];
       canvas.drawCircle(p, 3, node);
       if (m.degree(i) >= 2) canvas.drawCircle(p, 6, junction);
+      if (i == selectedPoint) canvas.drawCircle(p, 9, selectedRing);
     }
     // Constraint glyphs.
     for (final c in m.constraints) {

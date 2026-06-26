@@ -234,6 +234,18 @@ class _SceneViewState extends State<SceneView> {
             icon: const Icon(Icons.restart_alt, size: 18),
             onPressed: () => c.clearRegionDepth(region),
           ),
+        IconButton(
+          tooltip: 'Delete part',
+          icon: const Icon(Icons.delete_outline, size: 18),
+          color: Colors.redAccent,
+          onPressed: () {
+            c.removePart(scene.items[sel].authored);
+            setState(() {
+              _selItem = null;
+              _selFace = null;
+            });
+          },
+        ),
       ]);
     } else {
       body = Row(children: [

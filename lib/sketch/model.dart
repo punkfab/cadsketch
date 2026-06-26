@@ -230,7 +230,11 @@ class ParametricSketch {
 
   /// Builds a kernel sketch from the model, solves, and reads positions back.
   /// LM only accepts downhill steps, so results are never worse than as-drawn.
-  void solve() {
+  ///
+  /// [drag] pins an additional point (beyond the translation anchor) at its
+  /// current position, so dragging a vertex holds it under the cursor while the
+  /// rest of the sketch relaxes around it.
+  void solve({int? drag}) {
     if (segments.isEmpty) return;
     final s = SketchKernel.instance.newSketch();
     try {
@@ -238,6 +242,9 @@ class ParametricSketch {
         s.addPoint(p); // kernel id == list index
       }
       s.fixPoint(0); // anchor one point to remove the translation DOF
+      if (drag != null && drag != 0 && drag >= 0 && drag < points.length) {
+        s.fixPoint(drag); // hold the dragged vertex; the rest relaxes
+      }
       for (final c in constraints) {
         switch (c.kind) {
           case ConstraintKind.horizontal:
@@ -453,5 +460,99 @@ class ParametricSketch {
   void setDrivingLength(int si, double? length) {
     segments[si].drivingLength = length;
     solve();
+  }
+
+  // --- Direct manipulation: drag a vertex, delete geometry ---
+
+  /// Index of the nearest point handle within [radius] (logical px) of [p], or
+  /// null. Lets a press grab a vertex to drag it.
+  int? hitTestPoint(Offset p, {double radius = 14}) {
+    int? best;
+    var bestDist = radius;
+    for (var i = 0; i < points.length; i++) {
+      final d = (points[i] - p).distance;
+      if (d <= bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /// Moves point [pi] to [to] and re-solves with that vertex pinned, so the
+  /// rest of the sketch relaxes around it while constraints hold elsewhere.
+  void dragPoint(int pi, Offset to) {
+    if (pi < 0 || pi >= points.length) return;
+    points[pi] = to;
+    solve(drag: pi);
+  }
+
+  /// Removes segment [si] (and its arc), dropping constraints that reference it
+  /// and any now-unused points, then re-solves.
+  void removeSegment(int si) {
+    if (si < 0 || si >= segments.length) return;
+    _removeSegments({si});
+  }
+
+  /// Removes point [pi] along with every segment incident to it.
+  void removePoint(int pi) {
+    if (pi < 0 || pi >= points.length) return;
+    final incident = <int>{};
+    for (var i = 0; i < segments.length; i++) {
+      if (segments[i].a == pi || segments[i].b == pi) incident.add(i);
+    }
+    _removeSegments(incident);
+  }
+
+  /// Drops the given segments, remapping constraint segment-indices and pruning
+  /// orphaned points, then re-solves. The single choke point for deletion so
+  /// the points/segments/constraints index invariants stay consistent.
+  void _removeSegments(Set<int> remove) {
+    if (remove.isNotEmpty) {
+      final kept = [
+        for (var i = 0; i < segments.length; i++)
+          if (!remove.contains(i)) i
+      ];
+      final segRemap = {for (var n = 0; n < kept.length; n++) kept[n]: n};
+      final newConstraints = <SketchConstraint>[
+        for (final c in constraints)
+          if (!c.segments.any(remove.contains))
+            SketchConstraint(c.kind, [for (final s in c.segments) segRemap[s]!])
+      ];
+      final newSegments = [for (final i in kept) segments[i]];
+      segments
+        ..clear()
+        ..addAll(newSegments);
+      constraints
+        ..clear()
+        ..addAll(newConstraints);
+    }
+    _pruneOrphanPoints();
+    solve();
+  }
+
+  /// Removes points no segment references, remapping endpoint indices so the
+  /// kernel's "id == list index" contract still holds on the next solve.
+  void _pruneOrphanPoints() {
+    if (points.isEmpty) return;
+    final used = List<bool>.filled(points.length, false);
+    for (final s in segments) {
+      used[s.a] = true;
+      used[s.b] = true;
+    }
+    if (!used.contains(false)) return;
+    final keep = [
+      for (var i = 0; i < points.length; i++)
+        if (used[i]) i
+    ];
+    final remap = {for (var n = 0; n < keep.length; n++) keep[n]: n};
+    final newPoints = [for (final i in keep) points[i]];
+    for (final s in segments) {
+      s.a = remap[s.a]!;
+      s.b = remap[s.b]!;
+    }
+    points
+      ..clear()
+      ..addAll(newPoints);
   }
 }

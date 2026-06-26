@@ -19,6 +19,21 @@ class SketchCanvas extends StatefulWidget {
 
   final SketchController controller;
 
+  /// Pan offset (screen = model + offset) that centers a face sketch's
+  /// reference outline in the pane, so drawing lands on the face. Zero for
+  /// base-plane sketches — preserving the legacy "screen pixels == world units"
+  /// behavior and leaving existing sketches unchanged.
+  static Offset viewOffset(Size size, List<Offset>? reference) {
+    if (reference == null || reference.isEmpty) return Offset.zero;
+    var cx = 0.0, cy = 0.0;
+    for (final p in reference) {
+      cx += p.dx;
+      cy += p.dy;
+    }
+    final center = Offset(cx / reference.length, cy / reference.length);
+    return Offset(size.width / 2, size.height / 2) - center;
+  }
+
   @override
   State<SketchCanvas> createState() => _SketchCanvasState();
 }
@@ -44,6 +59,11 @@ class _SketchCanvasState extends State<SketchCanvas> {
   Offset? _downPos;
   bool _dragMoved = false;
 
+  // Pan that maps model (plane-local) coords to screen; set each build from the
+  // active part's reference loop. Geometry is stored/edited in model coords.
+  Offset _viewOffset = Offset.zero;
+  Offset _toModel(Offset screen) => screen - _viewOffset;
+
   final _focus = FocusNode();
 
   /// Movement below this (logical px) counts as a tap, not a stroke/drag.
@@ -56,29 +76,30 @@ class _SketchCanvasState extends State<SketchCanvas> {
     super.dispose();
   }
 
-  void _onDown(Offset p) {
-    _downPos = p;
+  void _onDown(Offset screen) {
+    _downPos = screen;
     _dragMoved = false;
     _focus.requestFocus(); // so Delete/Backspace reaches us
-    final pi = widget.controller.model.hitTestPoint(p);
+    final m = _toModel(screen);
+    final pi = widget.controller.model.hitTestPoint(m);
     if (pi != null) {
       _dragPoint = pi; // grab the vertex; don't start a stroke
       return;
     }
-    setState(() => _active = [p]); // begin a freehand stroke
+    setState(() => _active = [m]); // begin a freehand stroke (model coords)
   }
 
-  void _onMove(Offset p) {
+  void _onMove(Offset screen) {
     if (_dragPoint != null) {
       if (!_dragMoved &&
-          (_downPos == null || (p - _downPos!).distance < _tapSlop)) {
+          (_downPos == null || (screen - _downPos!).distance < _tapSlop)) {
         return; // still within tap slop — not a drag yet
       }
       _dragMoved = true;
-      widget.controller.movePoint(_dragPoint!, p); // live re-solve
+      widget.controller.movePoint(_dragPoint!, _toModel(screen)); // live re-solve
       return;
     }
-    setState(() => _active?.add(p));
+    setState(() => _active?.add(_toModel(screen)));
   }
 
   void _onUp() {
@@ -230,32 +251,39 @@ class _SketchCanvasState extends State<SketchCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    final sel = _sel;
-    final segHi =
-        _selected ?? (sel?.kind == _SelKind.segment ? sel!.index : null);
-    final circHi =
-        _selectedCircle ?? (sel?.kind == _SelKind.circle ? sel!.index : null);
-    final ptHi = sel?.kind == _SelKind.point ? sel!.index : null;
     return KeyboardListener(
       focusNode: _focus,
       onKeyEvent: _onKey,
-      child: Listener(
-        behavior: HitTestBehavior.opaque,
-        onPointerDown: (e) => _onDown(e.localPosition),
-        onPointerMove: (e) => _onMove(e.localPosition),
-        onPointerUp: (e) => _onUp(),
-        onPointerCancel: (e) => _onUp(),
-        child: AnimatedBuilder(
-          animation: widget.controller,
-          builder: (context, _) => Stack(
-            children: [
-              CustomPaint(
-                painter: _SketchPainter(
-                    widget.controller, _active, segHi, circHi, ptHi),
-                size: Size.infinite,
-              ),
-              if (sel != null) _selectionBar(sel),
-            ],
+      child: LayoutBuilder(
+        builder: (context, constraints) => Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (e) => _onDown(e.localPosition),
+          onPointerMove: (e) => _onMove(e.localPosition),
+          onPointerUp: (e) => _onUp(),
+          onPointerCancel: (e) => _onUp(),
+          child: AnimatedBuilder(
+            animation: widget.controller,
+            builder: (context, _) {
+              final reference = widget.controller.active.referenceLoop;
+              _viewOffset =
+                  SketchCanvas.viewOffset(constraints.biggest, reference);
+              final sel = _sel;
+              final segHi = _selected ??
+                  (sel?.kind == _SelKind.segment ? sel!.index : null);
+              final circHi = _selectedCircle ??
+                  (sel?.kind == _SelKind.circle ? sel!.index : null);
+              final ptHi = sel?.kind == _SelKind.point ? sel!.index : null;
+              return Stack(
+                children: [
+                  CustomPaint(
+                    painter: _SketchPainter(widget.controller, _active, segHi,
+                        circHi, ptHi, _viewOffset, reference),
+                    size: Size.infinite,
+                  ),
+                  if (sel != null) _selectionBar(sel),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -479,8 +507,12 @@ class SketchController extends ChangeNotifier {
 
   /// Adds a new plane-sketch (a Part on [plane]) and makes it active — the
   /// "sketch on a base plane / on a face" entry point for multi-plane work.
-  void addPlaneSketch(SketchPlane plane, {String? name}) {
-    parts.add(Part(name ?? 'Part ${parts.length + 1}')..plane = plane);
+  /// [reference] is the parent face's outline in plane-local coords (for a
+  /// "sketch on a face"); it anchors the new sketch onto the face.
+  void addPlaneSketch(SketchPlane plane, {String? name, List<Offset>? reference}) {
+    parts.add(Part(name ?? 'Part ${parts.length + 1}')
+      ..plane = plane
+      ..referenceLoop = reference);
     activeIndex = parts.length - 1;
     notifyListeners();
   }
@@ -505,18 +537,39 @@ class SketchController extends ChangeNotifier {
 
 class _SketchPainter extends CustomPainter {
   _SketchPainter(this.controller, this.active, this.selected,
-      this.selectedCircle, this.selectedPoint);
+      this.selectedCircle, this.selectedPoint, this.viewOffset, this.reference);
 
   final SketchController controller;
   final List<Offset>? active;
   final int? selected;
   final int? selectedCircle;
   final int? selectedPoint;
+  final Offset viewOffset;
+  final List<Offset>? reference; // parent face outline (guide), in model coords
 
   static const _glyphColor = Color(0xFFFFC857);
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.translate(viewOffset.dx, viewOffset.dy); // model coords -> screen
+
+    // Face guide: the outline of the face this sketch sits on, so you can see
+    // where you're drawing relative to the part.
+    final ref = reference;
+    if (ref != null && ref.length >= 2) {
+      final guide = Paint()
+        ..color = Colors.white.withValues(alpha: 0.22)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      final path = Path()..moveTo(ref.first.dx, ref.first.dy);
+      for (var i = 1; i < ref.length; i++) {
+        path.lineTo(ref[i].dx, ref[i].dy);
+      }
+      path.close();
+      canvas.drawPath(path, guide);
+    }
+
     final raw = Paint()
       ..color = Colors.blueGrey.shade400
       ..style = PaintingStyle.stroke
@@ -621,6 +674,8 @@ class _SketchPainter extends CustomPainter {
     // In-progress stroke.
     final a = active;
     if (a != null && a.length >= 2) canvas.drawPath(_polyline(a), raw);
+
+    canvas.restore();
   }
 
   void _drawConstraint(Canvas canvas, ParametricSketch m, SketchConstraint c) {

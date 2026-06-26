@@ -103,8 +103,13 @@ class _SceneViewState extends State<SceneView> {
   void _sketchOnSelectedFace(_Scene scene) {
     final i = _selItem, f = _selFace;
     if (i == null || f == null) return;
-    final plane = SketchPlane.fromFace(scene.items[i].solid, f);
-    widget.controller.addPlaneSketch(plane, name: 'Face sketch');
+    final solid = scene.items[i].solid;
+    final plane = SketchPlane.fromFace(solid, f);
+    // Project the picked face's outline into the new plane's 2D coords so the
+    // canvas can show it as a guide and anchor the sketch onto the face.
+    final reference = [for (final vi in solid.faces[f]) plane.to2d(solid.vertices[vi])];
+    widget.controller
+        .addPlaneSketch(plane, name: 'Face sketch', reference: reference);
     setState(() {
       _selItem = null;
       _selFace = null;

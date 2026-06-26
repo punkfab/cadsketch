@@ -1,0 +1,38 @@
+import 'dart:ui';
+
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:ai_sketcher/ui/sketch_canvas.dart';
+
+// "Sketch on a face" must land geometry ON the face. The 2D canvas stores
+// points in plane-local coords; a face plane's origin is the face centroid in
+// world space, so without a view transform a point drawn at canvas pixel
+// (300, 200) maps hundreds of units off the face. viewOffset centers the face's
+// reference outline in the pane so drawing there maps near the face.
+
+void main() {
+  test('viewOffset is zero with no reference (base-plane behavior unchanged)',
+      () {
+    expect(SketchCanvas.viewOffset(const Size(600, 400), null), Offset.zero);
+    expect(SketchCanvas.viewOffset(const Size(600, 400), const []), Offset.zero);
+  });
+
+  test('viewOffset centers a face reference loop so drawing lands on the face',
+      () {
+    // A face outline centered at (50, 50) in plane-local coords.
+    const loop = [
+      Offset(0, 0),
+      Offset(100, 0),
+      Offset(100, 100),
+      Offset(0, 100),
+    ];
+    const size = Size(600, 400);
+    final off = SketchCanvas.viewOffset(size, loop);
+
+    // Drawing at the pane center maps back to the loop's centroid — i.e. onto
+    // the face, not flung off by absolute pixel coordinates.
+    const centerScreen = Offset(300, 200);
+    final model = centerScreen - off;
+    expect((model - const Offset(50, 50)).distance, lessThan(1e-9));
+  });
+}

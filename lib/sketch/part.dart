@@ -35,6 +35,12 @@ class Part {
   /// frame for in-context "sketch on a face" / multi-plane construction.
   SketchPlane plane = SketchPlane.xy;
 
+  /// For a "sketch on a face" part: the parent face's outline in this plane's
+  /// local 2D coords. Drawn as a guide and used to center the 2D canvas on the
+  /// face, so drawn geometry lands on the face (not flung off by absolute
+  /// canvas pixel coordinates). Null for base-plane sketches.
+  List<Offset>? referenceLoop;
+
   /// Non-parametric strokes (circles, arcs, scribbles) shown for context.
   final List<SketchEntity> decorations = [];
 

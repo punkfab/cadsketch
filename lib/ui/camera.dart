@@ -39,12 +39,11 @@ class Camera {
 
   double depthOf(Vec3 v) => rotate(v - center).z;
 
-  /// Inverse of [project] for a chosen target plane: the world point on [plane]
-  /// that projects to screen point [s]. Orthographic, so we cast the view ray
-  /// (camera +z in world) through s and intersect [plane]; then map to the
-  /// plane's 2D coords. This is what turns a stroke drawn in the 3D scene into
-  /// sketch coordinates on the active plane.
-  Offset unprojectToPlane(Offset s, SketchPlane plane) {
+  /// World point where the view ray through screen point [s] meets the plane
+  /// (planeOrigin, planeNormal). Orthographic, so the ray is the camera +z axis
+  /// in world cast through s. Null if the ray is parallel to the plane. Shared
+  /// by stroke unprojection and face picking so both agree with what's drawn.
+  Vec3? rayPlaneHit(Offset s, Vec3 planeOrigin, Vec3 planeNormal) {
     final rx = (s.dx - origin.dx) / scale;
     final ry = -(s.dy - origin.dy) / scale;
     // Columns of the rotation matrix R (rotate of each world basis vector).
@@ -55,11 +54,17 @@ class Camera {
     final a = Vec3(c0.x * rx + c0.y * ry, c1.x * rx + c1.y * ry,
         c2.x * rx + c2.y * ry);
     final b = Vec3(c0.z, c1.z, c2.z); // view direction in world
-    final n = plane.normal;
-    final denom = dot(b, n);
-    final t = denom.abs() < 1e-9
-        ? 0.0
-        : -dot(center + a - plane.origin, n) / denom;
-    return plane.to2d(center + a + b * t);
+    final denom = dot(b, planeNormal);
+    if (denom.abs() < 1e-9) return null;
+    final t = -dot(center + a - planeOrigin, planeNormal) / denom;
+    return center + a + b * t;
+  }
+
+  /// Inverse of [project] for a chosen target plane: the [plane] 2D coordinate
+  /// that projects to screen point [s]. Turns a stroke drawn in the 3D scene
+  /// into sketch coordinates on the active plane.
+  Offset unprojectToPlane(Offset s, SketchPlane plane) {
+    final hit = rayPlaneHit(s, plane.origin, plane.normal);
+    return plane.to2d(hit ?? plane.origin);
   }
 }

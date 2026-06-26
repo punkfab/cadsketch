@@ -29,6 +29,8 @@ class _SceneViewState extends State<SceneView> {
   double _explode = 0;
   int? _selItem; // selected scene item (flattened index)
   int? _selFace; // selected face on that item (for "sketch on face")
+  int? _hovItem; // face under the cursor (hover preview of what a tap selects)
+  int? _hovFace;
 
   static const _palette = [
     Color(0xFF4DD0E1),
@@ -64,11 +66,12 @@ class _SceneViewState extends State<SceneView> {
         final ring = solid.faces[f];
         final poly = [for (final vi in ring) cam.project(solid.vertices[vi] + shift)];
         if (!_pointInPoly(p, poly)) continue;
-        var d = 0.0;
-        for (final vi in ring) {
-          d += cam.depthOf(solid.vertices[vi] + shift);
-        }
-        d /= ring.length;
+        // Depth of THIS face's surface directly under the cursor (ray-plane
+        // hit), so the face actually in front wins. Averaging vertex depths
+        // made the big end caps beat the side faces, so picking felt random.
+        final hit =
+            cam.rayPlaneHit(p, solid.faceCentroid(f) + shift, solid.faceNormal(f));
+        final d = hit == null ? -double.infinity : cam.depthOf(hit);
         if (d > bestDepth) {
           bestDepth = d;
           bi = i;
@@ -98,6 +101,25 @@ class _SceneViewState extends State<SceneView> {
       _selFace = h?.face;
     });
     if (h != null) widget.controller.setActive(scene.items[h.item].authored);
+  }
+
+  /// Hover preview: highlight the face a tap would select, so picking is
+  /// legible (no more guessing whether you'll get a cap or a side face).
+  void _hover(Offset p, _Scene scene, Camera cam) {
+    final h = _hit(p, scene, cam);
+    if (h?.item == _hovItem && h?.face == _hovFace) return;
+    setState(() {
+      _hovItem = h?.item;
+      _hovFace = h?.face;
+    });
+  }
+
+  void _clearHover() {
+    if (_hovItem == null && _hovFace == null) return;
+    setState(() {
+      _hovItem = null;
+      _hovFace = null;
+    });
   }
 
   void _sketchOnSelectedFace(_Scene scene) {
@@ -160,13 +182,17 @@ class _SceneViewState extends State<SceneView> {
           final cam = _camera(size, scene);
           return Stack(
             children: [
-              GestureDetector(
-                onPanUpdate: (e) => _orbit(e.delta),
-                onTapUp: (e) => _tap(e.localPosition, scene, cam),
-                child: CustomPaint(
-                  painter: _ScenePainter(scene, widget.controller.parts, cam,
-                      _explode, _selItem, _selFace, _palette),
-                  size: Size.infinite,
+              MouseRegion(
+                onHover: (e) => _hover(e.localPosition, scene, cam),
+                onExit: (_) => _clearHover(),
+                child: GestureDetector(
+                  onPanUpdate: (e) => _orbit(e.delta),
+                  onTapUp: (e) => _tap(e.localPosition, scene, cam),
+                  child: CustomPaint(
+                    painter: _ScenePainter(scene, widget.controller.parts, cam,
+                        _explode, _selItem, _selFace, _hovItem, _hovFace, _palette),
+                    size: Size.infinite,
+                  ),
                 ),
               ),
               if (_selFace != null)
@@ -372,7 +398,7 @@ _Scene _buildScene(List<Part> parts) {
 
 class _ScenePainter extends CustomPainter {
   _ScenePainter(this.scene, this.parts, this.cam, this.explode, this.selItem,
-      this.selFace, this.palette);
+      this.selFace, this.hovItem, this.hovFace, this.palette);
 
   final _Scene scene;
   final List<Part> parts;
@@ -380,6 +406,8 @@ class _ScenePainter extends CustomPainter {
   final double explode;
   final int? selItem;
   final int? selFace;
+  final int? hovItem;
+  final int? hovFace;
   final List<Color> palette;
 
   @override
@@ -412,16 +440,18 @@ class _ScenePainter extends CustomPainter {
         canvas.drawLine(cam.project(solid.vertices[e[0]] + shift),
             cam.project(solid.vertices[e[1]] + shift), paint);
       }
+      // Hover preview: faint fill on the face a tap would select (unless it's
+      // already the selected face, drawn brighter below).
+      if (i == hovItem &&
+          hovFace != null &&
+          !(isSel && hovFace == selFace)) {
+        canvas.drawPath(_facePath(solid, solid.faces[hovFace!], shift),
+            Paint()..color = Colors.cyanAccent.withValues(alpha: 0.14));
+      }
       // Highlight the selected face (the candidate sketch plane).
       if (isSel && selFace != null) {
-        final ring = solid.faces[selFace!];
-        final path = Path();
-        for (var k = 0; k < ring.length; k++) {
-          final pt = cam.project(solid.vertices[ring[k]] + shift);
-          k == 0 ? path.moveTo(pt.dx, pt.dy) : path.lineTo(pt.dx, pt.dy);
-        }
-        path.close();
-        canvas.drawPath(path, Paint()..color = Colors.white.withValues(alpha: 0.18));
+        canvas.drawPath(_facePath(solid, solid.faces[selFace!], shift),
+            Paint()..color = Colors.white.withValues(alpha: 0.18));
       }
     }
 
@@ -435,6 +465,16 @@ class _ScenePainter extends CustomPainter {
       _connector(canvas, m.itemA, m.faceA, mateDot, mateLine);
       _connector(canvas, m.itemB, m.faceB, mateDot, mateLine);
     }
+  }
+
+  /// Projected outline of a solid's face ring (shifted by explode).
+  Path _facePath(Solid solid, List<int> ring, Vec3 shift) {
+    final path = Path();
+    for (var k = 0; k < ring.length; k++) {
+      final pt = cam.project(solid.vertices[ring[k]] + shift);
+      k == 0 ? path.moveTo(pt.dx, pt.dy) : path.lineTo(pt.dx, pt.dy);
+    }
+    return path..close();
   }
 
   void _connector(Canvas canvas, int item, int face, Paint dot, Paint line) {

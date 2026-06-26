@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'ffi/sketch_kernel.dart';
 import 'sketch/mesh_import.dart';
 import 'sketch/plane.dart';
-import 'ui/ai_panel.dart';
+// import 'ui/ai_panel.dart'; // AI assistant sidebar disabled for now — re-enable with the layout below.
 import 'ui/assembly_view.dart';
 import 'ui/scene_view.dart';
 import 'ui/sketch_canvas.dart';
@@ -135,14 +135,10 @@ class _SketchHomeState extends State<SketchHome> {
       body: Column(
         children: [
           _PartsBar(controller: _controller),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(child: SceneView(controller: _controller)),
-                AiPanel(controller: _controller),
-              ],
-            ),
-          ),
+          // AI assistant sidebar disabled for now. To restore, wrap SceneView in
+          // a Row and add `AiPanel(controller: _controller)` after it (and
+          // uncomment the ai_panel.dart import above).
+          Expanded(child: SceneView(controller: _controller)),
         ],
       ),
     );

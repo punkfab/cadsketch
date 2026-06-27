@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'ffi/sketch_kernel.dart';
 import 'sketch/mesh_import.dart';
@@ -76,10 +77,54 @@ class _SketchHomeState extends State<SketchHome> {
     }
   }
 
+  Future<void> _openPalette() async {
+    final cmd = await showDialog<_Command>(
+      context: context,
+      builder: (_) => _CommandPalette(commands: _commands()),
+    );
+    if (cmd != null) await cmd.run();
+  }
+
+  Future<String?> _promptText() => showDialog<String>(
+        context: context,
+        builder: (_) => const _TextPromptDialog(),
+      );
+
+  /// The command set behind ⌘K. Each is a point in the unified model — pick a
+  /// datum (a plane / the active face) and a source (text, …); the rest of the
+  /// pipeline is shared. Deliberately the same ops as the toolbar, one grammar.
+  List<_Command> _commands() => [
+        _Command('Text…', 'Place text on the active face / plane',
+            Icons.text_fields, () async {
+          final s = await _promptText();
+          if (!mounted) return;
+          if (s != null && s.trim().isNotEmpty) _controller.addText(s.trim());
+        }),
+        _Command('Sketch on XY plane', 'New base-plane sketch',
+            Icons.add_box_outlined, () async => _controller.addPlaneSketch(SketchPlane.xy)),
+        _Command('Sketch on XZ plane', 'New base-plane sketch',
+            Icons.add_box_outlined, () async => _controller.addPlaneSketch(SketchPlane.xz)),
+        _Command('Sketch on YZ plane', 'New base-plane sketch',
+            Icons.add_box_outlined, () async => _controller.addPlaneSketch(SketchPlane.yz)),
+        _Command('Add part', 'Start a new empty body', Icons.add,
+            () async => _controller.addPart()),
+        _Command('Delete active part', 'Remove the current body',
+            Icons.delete_outline, () async => _controller.removePart(_controller.activeIndex)),
+        _Command('Clear active sketch', 'Erase the active part’s geometry',
+            Icons.clear_all, () async => _controller.clear()),
+      ];
+
   @override
   Widget build(BuildContext context) {
     final ok = _kernelStatus.startsWith('kernel v');
-    return Scaffold(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () => _openPalette(),
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () => _openPalette(),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
       appBar: AppBar(
         title: const Text('ai-sketcher'),
         actions: [
@@ -94,6 +139,11 @@ class _SketchHomeState extends State<SketchHome> {
                 ),
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Commands (⌘K / Ctrl+K)',
+            icon: const Icon(Icons.bolt_outlined),
+            onPressed: _openPalette,
           ),
           PopupMenuButton<SketchPlane>(
             tooltip: 'New sketch on a base plane',
@@ -140,6 +190,8 @@ class _SketchHomeState extends State<SketchHome> {
           // uncomment the ai_panel.dart import above).
           Expanded(child: SceneView(controller: _controller)),
         ],
+      ),
+        ),
       ),
     );
   }
@@ -338,6 +390,142 @@ class _ImportPathDialogState extends State<_ImportPathDialog> {
         FilledButton(
           onPressed: () => Navigator.pop(context, _field.text),
           child: const Text('Import'),
+        ),
+      ],
+    );
+  }
+}
+
+/// One entry in the ⌘K palette: a label, a hint, and the action to run.
+class _Command {
+  const _Command(this.label, this.subtitle, this.icon, this.run);
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final Future<void> Function() run;
+}
+
+/// The ⌘K command palette: a single search field over the command set. The
+/// "conversational" surface — because the model is unified, the command list is
+/// small and composable. Enter runs the top match; tap runs any.
+class _CommandPalette extends StatefulWidget {
+  const _CommandPalette({required this.commands});
+
+  final List<_Command> commands;
+
+  @override
+  State<_CommandPalette> createState() => _CommandPaletteState();
+}
+
+class _CommandPaletteState extends State<_CommandPalette> {
+  final _field = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  List<_Command> get _filtered {
+    final q = _query.toLowerCase().trim();
+    if (q.isEmpty) return widget.commands;
+    return widget.commands
+        .where((c) =>
+            c.label.toLowerCase().contains(q) ||
+            c.subtitle.toLowerCase().contains(q))
+        .toList();
+  }
+
+  void _runTop() {
+    final f = _filtered;
+    if (f.isNotEmpty) Navigator.pop(context, f.first);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final results = _filtered;
+    return Dialog(
+      alignment: Alignment.topCenter,
+      insetPadding: const EdgeInsets.only(top: 96, left: 24, right: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 540, maxHeight: 440),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: TextField(
+                controller: _field,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.bolt),
+                  hintText: 'Type a command…  (e.g. text)',
+                  border: InputBorder.none,
+                ),
+                onChanged: (v) => setState(() => _query = v),
+                onSubmitted: (_) => _runTop(),
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: results.length,
+                itemBuilder: (context, i) {
+                  final c = results[i];
+                  return ListTile(
+                    leading: Icon(c.icon, size: 20),
+                    title: Text(c.label),
+                    subtitle: Text(c.subtitle),
+                    onTap: () => Navigator.pop(context, c),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Prompts for a string to place as text geometry.
+class _TextPromptDialog extends StatefulWidget {
+  const _TextPromptDialog();
+
+  @override
+  State<_TextPromptDialog> createState() => _TextPromptDialogState();
+}
+
+class _TextPromptDialogState extends State<_TextPromptDialog> {
+  final _field = TextEditingController();
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Text'),
+      content: TextField(
+        controller: _field,
+        autofocus: true,
+        textCapitalization: TextCapitalization.characters,
+        decoration: const InputDecoration(hintText: 'e.g. M3'),
+        onSubmitted: (v) => Navigator.pop(context, v),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _field.text),
+          child: const Text('Add'),
         ),
       ],
     );

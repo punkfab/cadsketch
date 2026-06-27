@@ -11,6 +11,7 @@ import '../sketch/model.dart';
 import '../sketch/part.dart';
 import '../sketch/plane.dart';
 import '../sketch/solid.dart';
+import '../sketch/stroke_font.dart';
 
 /// Captures strokes; lines feed the parametric model (inferred + solved),
 /// everything else is kept as a decorative entity. Constraints are rendered
@@ -537,6 +538,37 @@ class SketchController extends ChangeNotifier {
       ..referenceLoop = reference);
     activeIndex = parts.length - 1;
     notifyListeners();
+  }
+
+  /// Adds [text] to the active part as stroke geometry on its datum — the SAME
+  /// RawStroke primitive a freehand mark uses, just emitted by a text source.
+  /// "Text on a face" is therefore a sketch on that face, nothing special.
+  /// Centered on the face outline (for a face sketch) or the existing geometry.
+  void addText(String text, {double size = 28}) {
+    final strokes = textToStrokes(text, size: size);
+    if (strokes.isEmpty) return;
+    final at = _datumCenter(active);
+    for (final s in strokes) {
+      active.decorations.add(RawStroke([for (final p in s) p + at]));
+    }
+    notifyListeners();
+  }
+
+  /// Where to drop placed geometry on a part's datum: the face outline's center
+  /// for a face sketch, else the existing sketch's center, else the origin.
+  Offset _datumCenter(Part part) {
+    final ref = part.referenceLoop;
+    final pts = ref ?? part.sketch.points;
+    if (pts.isEmpty) return Offset.zero;
+    var minX = double.infinity, minY = double.infinity;
+    var maxX = -double.infinity, maxY = -double.infinity;
+    for (final p in pts) {
+      if (p.dx < minX) minX = p.dx;
+      if (p.dx > maxX) maxX = p.dx;
+      if (p.dy < minY) minY = p.dy;
+      if (p.dy > maxY) maxY = p.dy;
+    }
+    return Offset((minX + maxX) / 2, (minY + maxY) / 2);
   }
 
   void addConnector(int faceIndex) {

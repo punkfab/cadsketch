@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../sketch/decomposition.dart';
+import '../sketch/entities.dart';
 import '../sketch/part.dart';
 import '../sketch/plane.dart';
 import '../sketch/solid.dart';
@@ -435,6 +436,16 @@ class _ScenePainter extends CustomPainter {
       for (final seg in p.sketch.segments) {
         canvas.drawLine(cam.project(p.plane.to3d(p.sketch.points[seg.a])),
             cam.project(p.plane.to3d(p.sketch.points[seg.b])), paint);
+      }
+      // Surface marks (freehand / text) live on the part's datum too — same
+      // primitive, so they ride the same plane mapping into the 3D scene.
+      for (final e in p.decorations) {
+        if (e is RawStroke) {
+          for (var k = 0; k + 1 < e.points.length; k++) {
+            canvas.drawLine(cam.project(p.plane.to3d(e.points[k])),
+                cam.project(p.plane.to3d(e.points[k + 1])), paint);
+          }
+        }
       }
     }
 

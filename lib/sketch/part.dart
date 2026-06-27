@@ -47,6 +47,11 @@ class Part {
   /// Extrude depth used when building the solid.
   double depth = 100;
 
+  /// When > 0, the part's surface marks (RawStroke decorations — text, freehand)
+  /// are thickened into ribbons and extruded along the plane normal by this much,
+  /// raising them into 3D (emboss). 0 keeps them as flat marks on the datum.
+  double embossDepth = 0;
+
   /// Per-region extrude-depth overrides for this part's region-partition
   /// decomposition (region index -> depth). Set when drilling into a region;
   /// geometry still rebuilds from the sketch, so this stays associative.

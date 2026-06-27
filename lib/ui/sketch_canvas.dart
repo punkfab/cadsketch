@@ -485,6 +485,13 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Raises the active part's surface marks (text / freehand) into 3D by
+  /// thickening + extruding them (emboss). 0 returns them to flat marks.
+  void setEmbossDepth(double depth) {
+    active.embossDepth = depth < 0 ? 0 : depth;
+    notifyListeners();
+  }
+
   // --- Direct manipulation: drag a vertex, delete geometry / parts ---
 
   /// Drags the active part's vertex [pi] to [to] (live constraint re-solve).

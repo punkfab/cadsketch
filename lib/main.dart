@@ -90,6 +90,15 @@ class _SketchHomeState extends State<SketchHome> {
         builder: (_) => const _TextPromptDialog(),
       );
 
+  Future<double?> _promptNumber(String title, String initial) async {
+    final s = await showDialog<String>(
+      context: context,
+      builder: (_) => _TextPromptDialog(
+          title: title, hint: 'depth (mm)', initial: initial, caps: false),
+    );
+    return s == null ? null : double.tryParse(s.trim());
+  }
+
   /// The command set behind ⌘K. Each is a point in the unified model — pick a
   /// datum (a plane / the active face) and a source (text, …); the rest of the
   /// pipeline is shared. Deliberately the same ops as the toolbar, one grammar.
@@ -99,6 +108,12 @@ class _SketchHomeState extends State<SketchHome> {
           final s = await _promptText();
           if (!mounted) return;
           if (s != null && s.trim().isNotEmpty) _controller.addText(s.trim());
+        }),
+        _Command('Extrude text…', 'Raise the active text/marks into 3D (emboss)',
+            Icons.format_size, () async {
+          final d = await _promptNumber('Extrude text', '12');
+          if (!mounted) return;
+          if (d != null) _controller.setEmbossDepth(d);
         }),
         _Command('Sketch on XY plane', 'New base-plane sketch',
             Icons.add_box_outlined, () async => _controller.addPlaneSketch(SketchPlane.xy)),
@@ -490,16 +505,26 @@ class _CommandPaletteState extends State<_CommandPalette> {
   }
 }
 
-/// Prompts for a string to place as text geometry.
+/// Prompts for a single string (text to place, or a number typed as text).
 class _TextPromptDialog extends StatefulWidget {
-  const _TextPromptDialog();
+  const _TextPromptDialog({
+    this.title = 'Text',
+    this.hint = 'e.g. M3',
+    this.initial = '',
+    this.caps = true,
+  });
+
+  final String title;
+  final String hint;
+  final String initial;
+  final bool caps;
 
   @override
   State<_TextPromptDialog> createState() => _TextPromptDialogState();
 }
 
 class _TextPromptDialogState extends State<_TextPromptDialog> {
-  final _field = TextEditingController();
+  late final _field = TextEditingController(text: widget.initial);
 
   @override
   void dispose() {
@@ -510,12 +535,14 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Text'),
+      title: Text(widget.title),
       content: TextField(
         controller: _field,
         autofocus: true,
-        textCapitalization: TextCapitalization.characters,
-        decoration: const InputDecoration(hintText: 'e.g. M3'),
+        textCapitalization: widget.caps
+            ? TextCapitalization.characters
+            : TextCapitalization.none,
+        decoration: InputDecoration(hintText: widget.hint),
         onSubmitted: (v) => Navigator.pop(context, v),
       ),
       actions: [

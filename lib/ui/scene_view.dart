@@ -5,6 +5,7 @@ import '../sketch/decomposition.dart';
 import '../sketch/entities.dart';
 import '../sketch/part.dart';
 import '../sketch/plane.dart';
+import '../sketch/ribbon.dart';
 import '../sketch/solid.dart';
 import 'camera.dart';
 import 'sketch_canvas.dart';
@@ -331,6 +332,11 @@ class _SceneViewState extends State<SceneView> {
 
 // --- Flattened multi-plane scene (derived; recomputed every build) ---
 
+/// Ribbon width (model units) for embossed strokes, and a region-index base for
+/// emboss items so they never collide with real decomposition region indices.
+const double _embossWidth = 2.2;
+const int _embossRegionBase = 1 << 20;
+
 class _Item {
   _Item(this.authored, this.region, this.solid, this.name, this.center);
   final int authored; // index into controller.parts
@@ -370,6 +376,23 @@ _Scene _buildScene(List<Part> parts) {
   final index = <String, int>{}; // "authored:region" -> item index
   for (var ai = 0; ai < parts.length; ai++) {
     final p = parts[ai];
+    // Emboss: raise this part's surface marks (text / freehand) into 3D by
+    // thickening each stroke into a ribbon and extruding it on the plane — the
+    // same extrude primitive, so "extruded text" is just an extruded sketch.
+    if (p.embossDepth > 0) {
+      var ti = 0;
+      for (final e in p.decorations) {
+        if (e is RawStroke) {
+          final ribbon = strokeRibbon(e.points, _embossWidth);
+          if (ribbon.length >= 3) {
+            final solid = extrudeOnPlane(ribbon, p.plane, p.embossDepth);
+            items.add(_Item(
+                ai, _embossRegionBase + ti, solid, '${p.name} · text', solid.centroid));
+            ti++;
+          }
+        }
+      }
+    }
     final d = decompose(p.sketch,
         depth: p.depth, plane: p.plane, depthOverrides: p.regionDepths);
     // No regions (imported mesh, or a circle-only sketch -> cylinder): show the
@@ -438,12 +461,15 @@ class _ScenePainter extends CustomPainter {
             cam.project(p.plane.to3d(p.sketch.points[seg.b])), paint);
       }
       // Surface marks (freehand / text) live on the part's datum too — same
-      // primitive, so they ride the same plane mapping into the 3D scene.
-      for (final e in p.decorations) {
-        if (e is RawStroke) {
-          for (var k = 0; k + 1 < e.points.length; k++) {
-            canvas.drawLine(cam.project(p.plane.to3d(e.points[k])),
-                cam.project(p.plane.to3d(e.points[k + 1])), paint);
+      // primitive, so they ride the same plane mapping into the 3D scene. When
+      // embossed they're drawn as raised ribbons (scene items) instead.
+      if (p.embossDepth <= 0) {
+        for (final e in p.decorations) {
+          if (e is RawStroke) {
+            for (var k = 0; k + 1 < e.points.length; k++) {
+              canvas.drawLine(cam.project(p.plane.to3d(e.points[k])),
+                  cam.project(p.plane.to3d(e.points[k + 1])), paint);
+            }
           }
         }
       }

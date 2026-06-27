@@ -465,11 +465,13 @@ class ParametricSketch {
   // --- Direct manipulation: drag a vertex, delete geometry ---
 
   /// Index of the nearest point handle within [radius] (logical px) of [p], or
-  /// null. Lets a press grab a vertex to drag it.
-  int? hitTestPoint(Offset p, {double radius = 14}) {
+  /// null. Lets a press grab a vertex to drag it. [exclude] skips one index
+  /// (the vertex being dragged, when looking for a weld target).
+  int? hitTestPoint(Offset p, {double radius = 14, int? exclude}) {
     int? best;
     var bestDist = radius;
     for (var i = 0; i < points.length; i++) {
+      if (i == exclude) continue;
       final d = (points[i] - p).distance;
       if (d <= bestDist) {
         bestDist = d;
@@ -477,6 +479,36 @@ class ParametricSketch {
       }
     }
     return best;
+  }
+
+  /// Welds point [from] onto [into] (a coincidence): repoints every segment,
+  /// drops any that collapse to zero length, prunes the now-unused [from], and
+  /// re-solves. This is how dragging a vertex onto another closes a path or
+  /// joins two chains. Returns the surviving vertex index.
+  int mergePoints(int from, int into) {
+    if (from == into ||
+        from < 0 ||
+        into < 0 ||
+        from >= points.length ||
+        into >= points.length) {
+      return into;
+    }
+    for (final s in segments) {
+      if (s.a == from) s.a = into;
+      if (s.b == from) s.b = into;
+    }
+    final collapsed = <int>{
+      for (var i = 0; i < segments.length; i++)
+        if (segments[i].a == segments[i].b) i
+    };
+    if (collapsed.isNotEmpty) {
+      _removeSegments(collapsed); // remaps constraints, prunes from, re-solves
+    } else {
+      _pruneOrphanPoints();
+      solve();
+    }
+    // Only `from` is newly orphaned, so indices above it shift down by one.
+    return into > from ? into - 1 : into;
   }
 
   /// Moves point [pi] to [to] and re-solves with that vertex pinned, so the

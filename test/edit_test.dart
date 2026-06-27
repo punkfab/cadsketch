@@ -71,6 +71,39 @@ void main() {
     }
   });
 
+  test('merging an open chain\'s endpoints closes the path (extrudable)', () {
+    final m = ParametricSketch();
+    // Open chain — the last vertex (40,40) is far enough from (0,0) that it
+    // does NOT auto-merge on draw, so the contour starts open.
+    m.addPolyline(const [
+      Offset(0, 0),
+      Offset(100, 0),
+      Offset(100, 100),
+      Offset(0, 100),
+      Offset(40, 40),
+    ]);
+    expect(m.points.length, 5);
+    expect(m.segments.length, 4);
+    expect(m.closedProfile(), isNull); // open: no extrudable face yet
+
+    // Drag the dangling endpoint onto the start vertex -> weld -> closed loop.
+    final last = m.points.length - 1; // the (40,40) endpoint
+    final kept = m.mergePoints(last, 0);
+    expect(kept, 0);
+    expect(m.points.length, 4);
+    expect(m.segments.length, 4);
+    expect(m.closedProfile(), isNotNull); // path closed -> a face to extrude
+  });
+
+  test('hitTestPoint can exclude the dragged vertex when seeking a weld target',
+      () {
+    final m = _square();
+    // Querying at corner 0 with no exclusion returns corner 0 itself...
+    expect(m.hitTestPoint(m.points[0]), 0);
+    // ...but excluding it finds the next-nearest within range, or null if none.
+    expect(m.hitTestPoint(m.points[0], exclude: 0, radius: 8), isNull);
+  });
+
   test('deleting every segment empties the sketch', () {
     final m = _square();
     while (m.segments.isNotEmpty) {

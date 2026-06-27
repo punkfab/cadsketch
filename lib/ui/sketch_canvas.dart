@@ -68,6 +68,10 @@ class _SketchCanvasState extends State<SketchCanvas> {
   int? _dragPoint;
   Offset? _downPos;
   bool _dragMoved = false;
+  int? _snapTarget; // vertex the dragged point would weld onto on release
+
+  /// Drag a vertex within this (model units) of another to weld them on release.
+  static const double _snapRadius = 16.0;
 
   // View transform: screen = model * _zoom + _pan. Geometry is stored/edited in
   // model coords; _pan/_zoom are recomputed each build (_pan also depends on the
@@ -112,7 +116,13 @@ class _SketchCanvasState extends State<SketchCanvas> {
         return; // still within tap slop — not a drag yet
       }
       _dragMoved = true;
+      final model = widget.controller.model;
       widget.controller.movePoint(_dragPoint!, _toModel(screen)); // live re-solve
+      // Preview the weld target: another vertex within snap range of where the
+      // dragged point now sits. Highlighted so "release to close" is legible.
+      final target = model.hitTestPoint(model.points[_dragPoint!],
+          exclude: _dragPoint, radius: _snapRadius);
+      if (target != _snapTarget) setState(() => _snapTarget = target);
       return;
     }
     setState(() => _active?.add(_toModel(screen)));
@@ -122,8 +132,16 @@ class _SketchCanvasState extends State<SketchCanvas> {
     final dp = _dragPoint;
     if (dp != null) {
       _dragPoint = null;
-      // A press on a vertex (moved or not) leaves it selected.
-      setState(() => _sel = _Selection(_SelKind.point, dp));
+      final target = _snapTarget;
+      _snapTarget = null;
+      if (target != null && target != dp && _dragMoved) {
+        // Dropped on another vertex → weld them (closes the path).
+        final kept = widget.controller.mergePoints(dp, target);
+        setState(() => _sel = _Selection(_SelKind.point, kept));
+      } else {
+        // A press on a vertex (moved or not) leaves it selected.
+        setState(() => _sel = _Selection(_SelKind.point, dp));
+      }
       return;
     }
     _end();
@@ -300,7 +318,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
                 children: [
                   CustomPaint(
                     painter: _SketchPainter(widget.controller, _active, segHi,
-                        circHi, ptHi, _pan, _zoom, reference),
+                        circHi, ptHi, _pan, _zoom, reference, _snapTarget),
                     size: Size.infinite,
                   ),
                   if (sel != null) _selectionBar(sel),
@@ -475,6 +493,14 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Welds dragged vertex [from] onto [into] (closes a path / joins a chain).
+  /// Returns the surviving vertex index.
+  int mergePoints(int from, int into) {
+    final kept = model.mergePoints(from, into);
+    notifyListeners();
+    return kept;
+  }
+
   void deleteSegment(int si) {
     model.removeSegment(si);
     notifyListeners();
@@ -591,7 +617,8 @@ class SketchController extends ChangeNotifier {
 
 class _SketchPainter extends CustomPainter {
   _SketchPainter(this.controller, this.active, this.selected,
-      this.selectedCircle, this.selectedPoint, this.pan, this.zoom, this.reference);
+      this.selectedCircle, this.selectedPoint, this.pan, this.zoom, this.reference,
+      this.snapTarget);
 
   final SketchController controller;
   final List<Offset>? active;
@@ -601,6 +628,7 @@ class _SketchPainter extends CustomPainter {
   final Offset pan;
   final double zoom;
   final List<Offset>? reference; // parent face outline (guide), in model coords
+  final int? snapTarget; // vertex a dragged point would weld onto (preview)
 
   static const _glyphColor = Color(0xFFFFC857);
 
@@ -703,11 +731,16 @@ class _SketchPainter extends CustomPainter {
       ..color = _glyphColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5;
+    final snapRing = Paint()
+      ..color = const Color(0xFF69F0AE) // green: "release to weld / close"
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
     for (var i = 0; i < m.points.length; i++) {
       final p = m.points[i];
       canvas.drawCircle(p, 3, node);
       if (m.degree(i) >= 2) canvas.drawCircle(p, 6, junction);
       if (i == selectedPoint) canvas.drawCircle(p, 9, selectedRing);
+      if (i == snapTarget) canvas.drawCircle(p, 11, snapRing);
     }
     // Constraint glyphs.
     for (final c in m.constraints) {

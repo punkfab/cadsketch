@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'export/featuretree_export.dart';
 import 'ffi/sketch_kernel.dart';
 import 'sketch/mesh_import.dart';
 import 'sketch/plane.dart';
@@ -121,6 +122,22 @@ class _SketchHomeState extends State<SketchHome> {
             Icons.add_box_outlined, () async => _controller.addPlaneSketch(SketchPlane.xz)),
         _Command('Sketch on YZ plane', 'New base-plane sketch',
             Icons.add_box_outlined, () async => _controller.addPlaneSketch(SketchPlane.yz)),
+        _Command(
+            'Export feature tree (IR)…',
+            'Analyse the active part → featuretree IR (→ editable FreeCAD tree)',
+            Icons.account_tree_outlined, () async {
+          try {
+            final path = writeFeatureTreeIr(_controller.active);
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Wrote $path — run it through '
+                    'featuretree/gen.py for an editable FreeCAD tree')));
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('Export failed: $e')));
+          }
+        }),
         _Command('Add part', 'Start a new empty body', Icons.add,
             () async => _controller.addPart()),
         _Command('Delete active part', 'Remove the current body',

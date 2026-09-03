@@ -19,7 +19,7 @@ Pod::Spec.new do |s|
   s.version          = '0.0.1'
   s.summary          = 'ai-sketcher geometry kernel (LM constraint solver, fits)'
   s.description      = 'Flat C ABI geometry kernel shared by the Flutter harness and the native iOS build.'
-  s.homepage         = 'https://github.com/dnewcome/ai-sketcher'
+  s.homepage         = 'https://github.com/punkfab/cadsketch'
   s.license          = { :type => 'MIT' }
   s.author           = { 'Dan Newcome' => 'djn125@yahoo.com' }
   s.source           = { :path => '.' }

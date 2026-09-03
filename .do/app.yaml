@@ -16,7 +16,7 @@ region: nyc
 static_sites:
   - name: cadsketch
     github:
-      repo: dnewcome/ai-sketcher
+      repo: punkfab/cadsketch
       branch: site
       deploy_on_push: true
     # Prebuilt by CI — served as-is from the branch root.

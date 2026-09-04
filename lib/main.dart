@@ -20,28 +20,38 @@ Future<void> main() async {
 }
 
 class AiSketcherApp extends StatelessWidget {
-  const AiSketcherApp({super.key});
+  const AiSketcherApp({super.key, this.controller});
+
+  /// Optional pre-seeded controller (screenshot/integration harness supplies a
+  /// controller already populated with representative parts). Null in normal
+  /// use, where [SketchHome] creates and owns its own.
+  final SketchController? controller;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ai-sketcher',
+      title: 'CADSketch',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true),
-      home: const SketchHome(),
+      home: SketchHome(controller: controller),
     );
   }
 }
 
 class SketchHome extends StatefulWidget {
-  const SketchHome({super.key});
+  const SketchHome({super.key, this.controller});
+
+  /// See [AiSketcherApp.controller]. When null, the state creates its own.
+  final SketchController? controller;
 
   @override
   State<SketchHome> createState() => _SketchHomeState();
 }
 
 class _SketchHomeState extends State<SketchHome> {
-  final _controller = SketchController();
+  late final SketchController _controller = widget.controller ?? SketchController();
+  // Only dispose a controller we created; an injected one is the caller's.
+  late final bool _ownsController = widget.controller == null;
 
   // Probe the FFI bridge once at startup. If the kernel didn't build/bundle,
   // this surfaces here loudly rather than failing mysteriously on first stroke.
@@ -57,7 +67,7 @@ class _SketchHomeState extends State<SketchHome> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    if (_ownsController) _controller.dispose();
     super.dispose();
   }
 
@@ -158,20 +168,20 @@ class _SketchHomeState extends State<SketchHome> {
         autofocus: true,
         child: Scaffold(
       appBar: AppBar(
-        title: const Text('ai-sketcher'),
+        title: const Text('CADSketch'),
         actions: [
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                _kernelStatus,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: ok ? Colors.greenAccent : Colors.redAccent,
+          // The kernel version is a dev diagnostic — only surface it when the
+          // kernel failed to load, so the shipping app bar stays clean.
+          if (!ok)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  _kernelStatus,
+                  style: const TextStyle(fontSize: 12, color: Colors.redAccent),
                 ),
               ),
             ),
-          ),
           IconButton(
             tooltip: 'Commands (⌘K / Ctrl+K)',
             icon: const Icon(Icons.bolt_outlined),

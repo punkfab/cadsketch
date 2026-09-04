@@ -1,0 +1,77 @@
+name: iOS App Store screenshots
+
+# Captures App Store screenshots by driving the real app on an iPad Pro
+# simulator (integration_test), at the simulator's native resolution
+# (2048x2732 / 2064x2752 — accepted ipad-13 sizes). Manual only: macOS runners
+# bill ~10x, and screenshots are cut intentionally, not on every push.
+#
+#   gh workflow run ios-screenshots.yml --ref main
+#
+# Output: an artifact `appstore-screenshots-ipad-13` with the PNGs, ready to
+# drop into ios/appstore/screenshots/ipad-13/ and feed to the ASC uploader.
+on:
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Select latest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Install the kernel CocoaPod for the simulator so the FFI kernel links in
+      # and the app bar shows no "kernel unavailable" diagnostic.
+      - name: Install pods (simulator)
+        run: |
+          flutter build ios --config-only --simulator
+          cd ios && pod install
+
+      - name: Boot an iPad Pro 12.9"/13" simulator
+        id: sim
+        run: |
+          DEVTYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devicetypes']; c=[x for x in d if 'iPad Pro' in x['name'] and ('12.9' in x['name'] or '13-inch' in x['name'])]; print(c[-1]['identifier'])")
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]; print(r[-1]['identifier'])")
+          echo "device type: $DEVTYPE"; echo "runtime: $RUNTIME"
+          UDID=$(xcrun simctl create ShotPad "$DEVTYPE" "$RUNTIME")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Capture screenshots
+        run: |
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/screenshots_test.dart \
+            -d ${{ steps.sim.outputs.udid }}
+
+      - name: Strip alpha + report sizes
+        run: |
+          brew install imagemagick
+          shopt -s nullglob
+          for f in ios/appstore/screenshots/ipad-13/*.png; do
+            mogrify -alpha off "$f"
+            echo "$(sips -g pixelWidth -g pixelHeight "$f" | tr '\n' ' ')  $f"
+          done
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: appstore-screenshots-ipad-13
+          path: ios/appstore/screenshots/ipad-13/*.png
+          if-no-files-found: error

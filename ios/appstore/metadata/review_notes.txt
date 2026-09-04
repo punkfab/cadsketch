@@ -1,0 +1,8 @@
+CADSketch needs no account or login and collects no data.
+
+To try the core flow:
+1) On the canvas, draw a closed shape — a rough rectangle or circle is fine; it is cleaned up automatically.
+2) Switch to the 3D view to see the profile extruded into a solid.
+3) Tap a face, choose "Sketch on face," and draw a shape to add or cut material (toggle Union / Cut).
+
+Apple Pencil is supported but not required — finger drawing works. iPad only.

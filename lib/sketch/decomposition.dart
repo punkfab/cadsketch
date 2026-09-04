@@ -60,6 +60,7 @@ Decomposition decompose(
   SketchPlane plane = SketchPlane.xy,
   Map<int, String>? names,
   Map<int, double>? depthOverrides,
+  double dirSign = 1,
 }) {
   final set = findRegions(sketch);
   if (set.regions.isEmpty) {
@@ -69,7 +70,9 @@ Decomposition decompose(
   final parts = <DecomposedPart>[];
   for (var i = 0; i < set.regions.length; i++) {
     final d = depthOverrides?[i] ?? depth;
-    final solid = extrudeOnPlane(set.regions[i].profile, plane, d);
+    // dirSign carries the feature's direction (union +normal / difference
+    // -normal, flipped if asked); depthOverrides stay positive magnitudes.
+    final solid = extrudeOnPlane(set.regions[i].profile, plane, d * dirSign);
     parts.add(DecomposedPart(
         names?[i] ?? 'Part ${i + 1}', solid, solid.centroid));
   }

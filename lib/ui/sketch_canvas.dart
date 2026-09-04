@@ -492,6 +492,20 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sets whether the active face feature adds (union) or removes (difference)
+  /// material; the extrude direction follows automatically.
+  void setOperation(FeatureOp op) {
+    active.operation = op;
+    notifyListeners();
+  }
+
+  /// Reverses the active feature's extrude direction (the rare inward-union /
+  /// outward-difference case).
+  void toggleFlipDirection() {
+    active.flipDirection = !active.flipDirection;
+    notifyListeners();
+  }
+
   // --- Direct manipulation: drag a vertex, delete geometry / parts ---
 
   /// Drags the active part's vertex [pi] to [to] (live constraint re-solve).

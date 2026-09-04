@@ -9,6 +9,19 @@ import 'solid.dart';
 /// Segments used to tessellate a circle into an extrudable profile (cylinder).
 const int _kCircleFacets = 48;
 
+/// How a sketch-on-face feature relates to the body it sits on. The harness has
+/// no B-rep booleans yet (deferred to OCCT on native), so this doesn't compute a
+/// fused/cut solid — it makes the *intent* explicit: which way the extrude goes
+/// and how the feature reads (green boss vs red pocket), and it's exactly the
+/// signal the featuretree bridge needs (union -> pad, difference -> pocket).
+enum FeatureOp {
+  /// Add material: extrude outward along the face normal.
+  union,
+
+  /// Remove material: extrude inward, into the parent body.
+  difference,
+}
+
 // A Part is one unit of the assembly: a 2D parametric profile, an extrude
 // depth, the solid that produces, and any mate connectors placed on its faces.
 // Multiple parts live on the canvas at once (M4 assembly UX); the controller
@@ -44,8 +57,27 @@ class Part {
   /// Non-parametric strokes (circles, arcs, scribbles) shown for context.
   final List<SketchEntity> decorations = [];
 
-  /// Extrude depth used when building the solid.
+  /// Extrude depth (magnitude) used when building the solid. Always positive;
+  /// the *direction* comes from [operation]/[flipDirection] via [dirSign].
   double depth = 100;
+
+  /// For a face sketch, whether this feature adds or removes material. Defaults
+  /// to union (a boss extruding outward) so a new face sketch never silently
+  /// dives into the part. Ignored for the base master sketch (extrudes +normal).
+  FeatureOp operation = FeatureOp.union;
+
+  /// Reverses the extrude direction that [operation] implies, for the rare case
+  /// where a union should go inward or a difference outward.
+  bool flipDirection = false;
+
+  /// The sign applied to [depth] when extruding: union goes +normal (out),
+  /// difference goes -normal (in), and [flipDirection] negates that.
+  double get dirSign =>
+      (operation == FeatureOp.difference) != flipDirection ? -1.0 : 1.0;
+
+  /// True once a direction other than "add material, outward" is in play — i.e.
+  /// this feature reads as a cut. Drives the red/green rendering.
+  bool get isSubtractive => dirSign < 0;
 
   /// When > 0, the part's surface marks (RawStroke decorations — text, freehand)
   /// are thickened into ribbons and extruded along the plane normal by this much,

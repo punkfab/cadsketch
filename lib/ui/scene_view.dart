@@ -35,6 +35,8 @@ class _SceneViewState extends State<SceneView> {
   int? _selFace; // selected face on that item (for "sketch on face")
   int? _hovItem; // face under the cursor (hover preview of what a tap selects)
   int? _hovFace;
+  Offset? _lastTapPt; // last tap location, to detect same-spot re-clicks
+  int _cycleIdx = 0; // which stacked candidate a re-click at the same spot picks
 
   static const _palette = [
     Color(0xFF4DD0E1),
@@ -65,9 +67,13 @@ class _SceneViewState extends State<SceneView> {
         _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.2, 12.0);
       });
 
-  ({int item, int face})? _hit(Offset p, _Scene scene, Camera cam) {
-    int? bi, bf;
-    var bestDepth = -double.infinity;
+  /// All faces under the cursor, front-most first. Back-faces (normals pointing
+  /// away from the camera) are culled so a far cap can't win over the face you
+  /// can actually see. Depth is the ray-plane hit of THIS face's surface under
+  /// the cursor (averaging vertices let big end caps beat side faces, so picking
+  /// felt random). The returned order is what click-to-cycle steps through.
+  List<({int item, int face})> _hitAll(Offset p, _Scene scene, Camera cam) {
+    final cands = <({int item, int face, double depth})>[];
     for (var i = 0; i < scene.items.length; i++) {
       final solid = scene.items[i].solid;
       final shift = scene.explode(i, _explode);
@@ -75,20 +81,24 @@ class _SceneViewState extends State<SceneView> {
         final ring = solid.faces[f];
         final poly = [for (final vi in ring) cam.project(solid.vertices[vi] + shift)];
         if (!_pointInPoly(p, poly)) continue;
-        // Depth of THIS face's surface directly under the cursor (ray-plane
-        // hit), so the face actually in front wins. Averaging vertex depths
-        // made the big end caps beat the side faces, so picking felt random.
-        final hit =
-            cam.rayPlaneHit(p, solid.faceCentroid(f) + shift, solid.faceNormal(f));
+        final c = solid.faceCentroid(f) + shift;
+        final n = solid.faceNormal(f);
+        // Front-facing test using only depthOf: nudging the centroid along its
+        // outward normal moves it toward the camera (depth grows) iff the face
+        // points at us. Grazing faces (~0) are kept — they're still selectable.
+        if (cam.depthOf(c + n * 0.01) < cam.depthOf(c) - 1e-9) continue;
+        final hit = cam.rayPlaneHit(p, c, n);
         final d = hit == null ? -double.infinity : cam.depthOf(hit);
-        if (d > bestDepth) {
-          bestDepth = d;
-          bi = i;
-          bf = f;
-        }
+        cands.add((item: i, face: f, depth: d));
       }
     }
-    return bi == null ? null : (item: bi, face: bf!);
+    cands.sort((a, b) => b.depth.compareTo(a.depth)); // front-most first
+    return [for (final c in cands) (item: c.item, face: c.face)];
+  }
+
+  ({int item, int face})? _hit(Offset p, _Scene scene, Camera cam) {
+    final all = _hitAll(p, scene, cam);
+    return all.isEmpty ? null : all.first;
   }
 
   static bool _pointInPoly(Offset p, List<Offset> poly) {
@@ -104,7 +114,13 @@ class _SceneViewState extends State<SceneView> {
   }
 
   void _tap(Offset p, _Scene scene, Camera cam) {
-    final h = _hit(p, scene, cam);
+    final all = _hitAll(p, scene, cam);
+    // Re-clicking the same spot steps to the next face behind the current one;
+    // a click at a new spot resets to the front-most (closest) face.
+    final same = _lastTapPt != null && (p - _lastTapPt!).distance < 6;
+    _cycleIdx = (same && all.isNotEmpty) ? (_cycleIdx + 1) % all.length : 0;
+    _lastTapPt = p;
+    final h = all.isEmpty ? null : all[_cycleIdx];
     setState(() {
       _selItem = h?.item;
       _selFace = h?.face;
@@ -322,10 +338,71 @@ class _SceneViewState extends State<SceneView> {
         ),
       ]);
     }
+    // A face sketch is a feature ON a body: expose whether it adds or cuts, its
+    // direction, and its length right here so the outcome is never implicit.
+    final faceRow = c.active.referenceLoop != null ? _faceFeatureRow(c) : null;
     return Container(
       color: const Color(0xFF161C22),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: body,
+      child: faceRow == null
+          ? body
+          : Column(mainAxisSize: MainAxisSize.min, children: [faceRow, body]),
+    );
+  }
+
+  Widget _faceFeatureRow(SketchController c) {
+    final part = c.active;
+    final subtractive = part.isSubtractive;
+    final accent = subtractive ? const Color(0xFFE57373) : const Color(0xFF81C784);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(children: [
+        const Icon(Icons.account_tree_outlined, size: 16, color: Colors.white54),
+        const SizedBox(width: 8),
+        SegmentedButton<FeatureOp>(
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          segments: const [
+            ButtonSegment(
+                value: FeatureOp.union,
+                icon: Icon(Icons.add, size: 15),
+                label: Text('Union')),
+            ButtonSegment(
+                value: FeatureOp.difference,
+                icon: Icon(Icons.remove, size: 15),
+                label: Text('Cut')),
+          ],
+          selected: {part.operation},
+          onSelectionChanged: (s) => c.setOperation(s.first),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          tooltip: part.flipDirection ? 'Un-flip direction' : 'Flip direction',
+          visualDensity: VisualDensity.compact,
+          icon: Icon(Icons.swap_vert,
+              size: 18, color: part.flipDirection ? accent : Colors.white54),
+          onPressed: c.toggleFlipDirection,
+        ),
+        // Live read-out: which way the extrude goes and how it reads.
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(subtractive ? Icons.south : Icons.north, size: 15, color: accent),
+          const SizedBox(width: 2),
+          Text(subtractive ? 'cuts in' : 'adds out',
+              style: TextStyle(color: accent, fontSize: 12)),
+        ]),
+        const SizedBox(width: 12),
+        const Text('Length', style: TextStyle(color: Colors.white54, fontSize: 12)),
+        Expanded(
+          child: Slider(
+            value: part.depth.clamp(5, 400),
+            min: 5,
+            max: 400,
+            onChanged: c.setDepth,
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -394,7 +471,10 @@ _Scene _buildScene(List<Part> parts) {
       }
     }
     final d = decompose(p.sketch,
-        depth: p.depth, plane: p.plane, depthOverrides: p.regionDepths);
+        depth: p.depth,
+        plane: p.plane,
+        depthOverrides: p.regionDepths,
+        dirSign: p.dirSign);
     // No regions (imported mesh, or a circle-only sketch -> cylinder): show the
     // part's own solid as a single body so nothing silently disappears.
     if (d.parts.isEmpty) {
@@ -480,8 +560,18 @@ class _ScenePainter extends CustomPainter {
       final solid = scene.items[i].solid;
       final shift = scene.explode(i, explode);
       final isSel = i == selItem;
+      // A face feature reads by colour: green adds material (union), red cuts
+      // (difference) — so "is this a union or a difference?" is answered on
+      // sight. Base bodies keep the neutral palette.
+      final part = parts[scene.items[i].authored];
+      final feature = part.referenceLoop != null;
+      final baseColor = feature
+          ? (part.isSubtractive
+              ? const Color(0xFFE57373)
+              : const Color(0xFF81C784))
+          : palette[i % palette.length];
       final paint = Paint()
-        ..color = isSel ? Colors.white : palette[i % palette.length]
+        ..color = isSel ? Colors.white : baseColor
         ..style = PaintingStyle.stroke
         ..strokeWidth = isSel ? 2.6 : 1.6
         ..strokeCap = StrokeCap.round;

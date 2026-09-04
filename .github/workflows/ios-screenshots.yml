@@ -45,9 +45,8 @@ jobs:
       - name: Boot an iPad Pro 12.9"/13" simulator
         id: sim
         run: |
-          DEVTYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devicetypes']; c=[x for x in d if 'iPad Pro' in x['name'] and ('12.9' in x['name'] or '13-inch' in x['name'])]; print(c[-1]['identifier'])")
-          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')]; print(r[-1]['identifier'])")
-          echo "device type: $DEVTYPE"; echo "runtime: $RUNTIME"
+          read RUNTIME DEVTYPE NAME < <(python3 tools/pick_ipad_sim.py)
+          echo "runtime: $RUNTIME"; echo "device type: $DEVTYPE ($NAME)"
           UDID=$(xcrun simctl create ShotPad "$DEVTYPE" "$RUNTIME")
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- CADSketch app icon: a 2D profile extruding into a 3D solid, drawn as
+       blueprint linework. Full-bleed, opaque (iOS masks the corners itself). -->
+  <defs>
+    <linearGradient id="sheet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#123255"/>
+      <stop offset="1" stop-color="#0B1D34"/>
+    </linearGradient>
+  </defs>
+
+  <!-- blueprint ground -->
+  <rect width="1024" height="1024" fill="url(#sheet)"/>
+
+  <!-- faint blueprint grid -->
+  <g stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="2">
+    <path d="M0 128H1024 M0 256H1024 M0 384H1024 M0 512H1024 M0 640H1024 M0 768H1024 M0 896H1024"/>
+    <path d="M128 0V1024 M256 0V1024 M384 0V1024 M512 0V1024 M640 0V1024 M768 0V1024 M896 0V1024"/>
+  </g>
+
+  <!-- content group, optically centred (shifted up from the raw coordinates) -->
+  <g transform="translate(0,-58)">
+  <!-- the extruded solid: an oblique box in white linework.
+       front square (the extrude's end), back square offset up-right. -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="28" stroke-linejoin="round" stroke-linecap="round">
+    <!-- connectors (extrude depth) -->
+    <path d="M300 470 L470 320" stroke-opacity="0.5"/>
+    <path d="M660 470 L830 320"/>
+    <path d="M660 830 L830 680"/>
+    <path d="M300 830 L470 680" stroke-opacity="0.5"/>
+    <!-- back square (partly hidden edges dimmed) -->
+    <path d="M470 320 L830 320 L830 680 L470 680 L470 320" stroke-opacity="0.5"/>
+    <!-- front square (the sketched profile, solid) -->
+    <path d="M300 470 L660 470 L660 830 L300 830 Z"/>
+  </g>
+
+  <!-- the originating freehand sketch stroke, resolving into the front profile -->
+  <path d="M300 830 L660 830" stroke="#FF6B6B" stroke-width="30" stroke-linecap="round"/>
+
+  <!-- constraint node on a corner -->
+  <circle cx="300" cy="830" r="26" fill="#FF6B6B"/>
+  <circle cx="660" cy="470" r="18" fill="#FFFFFF"/>
+  </g>
+</svg>

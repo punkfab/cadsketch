@@ -43,6 +43,15 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.1
+
+# Regenerate the iOS app icon set from the blueprint source:
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  ios: true
+  remove_alpha_ios: true
+  android: false
+  image_path: "assets/icon/cadsketch_icon.png"
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

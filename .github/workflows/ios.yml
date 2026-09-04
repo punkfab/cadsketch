@@ -145,6 +145,31 @@ jobs:
             -authenticationKeyID "$KEY_ID" \
             -authenticationKeyIssuerID "$ISSUER_ID"
 
+      # --- App Store staging (tag builds only; stops before Submit) ---------
+      # On an ios-v* tag, after the build is up, wait for it to process and push
+      # the full App Store listing (metadata, availability, age rating, attach
+      # this build). Review contact + App Privacy are one-time/persistent and NOT
+      # set here, so no PII goes through CI. Nothing is ever submitted to review
+      # automatically — that stays a human click.
+      - name: Stage App Store listing (stop before Submit)
+        if: github.ref_type == 'tag'
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          python3 -m venv /tmp/ascv
+          /tmp/ascv/bin/pip install --quiet pyjwt cryptography requests
+          export ASC_KEY_PATH=$(ls ~/private_keys/AuthKey_*.p8)
+          echo "== waiting for build ${{ steps.ver.outputs.build }} to process =="
+          /tmp/ascv/bin/python tools/asc_wait_build.py cadsketcher.ai.app ${{ steps.ver.outputs.build }}
+          echo "== staging listing for ${{ steps.ver.outputs.version }} =="
+          /tmp/ascv/bin/python tools/asc_listing.py \
+            --bundle-id cadsketcher.ai.app \
+            --dir ios/appstore \
+            --version ${{ steps.ver.outputs.version }} \
+            --build ${{ steps.ver.outputs.build }}
+          echo "::notice::Listing staged for ${{ steps.ver.outputs.version }}. Remaining manual steps: App Privacy questionnaire + Submit for Review."
+
       - name: Clean up key
         if: always()
         run: rm -rf ~/private_keys

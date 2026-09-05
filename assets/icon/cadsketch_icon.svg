@@ -17,8 +17,9 @@
     <path d="M128 0V1024 M256 0V1024 M384 0V1024 M512 0V1024 M640 0V1024 M768 0V1024 M896 0V1024"/>
   </g>
 
-  <!-- content group, optically centred (shifted up from the raw coordinates) -->
-  <g transform="translate(0,-58)">
+  <!-- content group, centred on the linework's actual bounding box
+       (raw bbox center ~ (559,581); canvas center (512,512)) -->
+  <g transform="translate(-47,-69)">
   <!-- the extruded solid: an oblique box in white linework.
        front square (the extrude's end), back square offset up-right. -->
   <g fill="none" stroke="#FFFFFF" stroke-width="28" stroke-linejoin="round" stroke-linecap="round">

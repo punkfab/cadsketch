@@ -70,18 +70,41 @@ SketchController _seed(List<Part> parts, {int active = 0}) {
 /// Scene 1: a flat sketch and the solid it extrudes into — the core promise.
 SketchController sketchToSolid() => _seed([_plate()]);
 
-/// Scene 2: sketch on a face to ADD material (green boss). Active = the feature,
-/// so the Union/Cut control row is visible.
+/// Scene 2: a face sketch adding material (green boss). Active = the feature so
+/// the Union/Cut control row shows.
 SketchController faceUnion() =>
     _seed([_block(), _faceFeature(_block(), FeatureOp.union)], active: 1);
 
-/// Scene 3: sketch on a face to CUT material (red pocket).
+/// Scene 3: a face sketch cutting material (red pocket).
 SketchController faceCut() =>
     _seed([_block(), _faceFeature(_block(), FeatureOp.difference)], active: 1);
 
+// --- Larger, solver-free scenes used for the current "passable now" App Store
+//     shots. Sized so the 2D pane frames the sketch (the canvas maps 1 model
+//     unit to 1px at zoom 1). Face-feature scenes above are kept for later.
+
+Part _bigPlate() {
+  final p = Part('Plate')..depth = 180;
+  _rect(p.sketch, 420, 280);
+  p.decorations.add(CircleEntity(const Offset(210, 140), 52));
+  return p;
+}
+
+Part _bracket() {
+  final p = Part('Bracket')..depth = 300;
+  _rect(p.sketch, 240, 360);
+  return p;
+}
+
+Part _cylinder() {
+  final p = Part('Boss')..depth = 260;
+  p.decorations.add(CircleEntity(const Offset(180, 180), 150));
+  return p;
+}
+
 /// The ordered scenes the screenshot harness captures. Keys become file names.
 final Map<String, SketchController Function()> screenshotScenes = {
-  '01-sketch-to-solid': sketchToSolid,
-  '02-sketch-on-face-union': faceUnion,
-  '03-sketch-on-face-cut': faceCut,
+  '01-sketch-to-solid': () => _seed([_bigPlate()]),
+  '02-extrude': () => _seed([_bracket()]),
+  '03-cylinder': () => _seed([_cylinder()]),
 };

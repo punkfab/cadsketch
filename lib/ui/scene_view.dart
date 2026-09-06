@@ -49,10 +49,21 @@ class _SceneViewState extends State<SceneView> {
     Color(0xFF4DB6AC),
   ];
 
+  double _scaleStartZoom = 1; // _zoom captured at pinch start
+
   void _orbit(Offset d) => setState(() {
         _yaw += d.dx * 0.01;
         _pitch = (_pitch + d.dy * 0.01).clamp(-1.5, 1.5);
       });
+
+  // Scale gesture: one finger orbits (focalPointDelta), two fingers pinch-dolly.
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (d.pointerCount >= 2) {
+      setState(() => _zoom = (_scaleStartZoom * d.scale).clamp(0.2, 12.0));
+    } else {
+      _orbit(d.focalPointDelta);
+    }
+  }
 
   Camera _camera(Size size, _Scene scene) => Camera(
         size: size,
@@ -215,7 +226,8 @@ class _SceneViewState extends State<SceneView> {
                   onHover: (e) => _hover(e.localPosition, scene, cam),
                   onExit: (_) => _clearHover(),
                   child: GestureDetector(
-                    onPanUpdate: (e) => _orbit(e.delta),
+                    onScaleStart: (_) => _scaleStartZoom = _zoom,
+                    onScaleUpdate: _onScaleUpdate,
                     onTapUp: (e) => _tap(e.localPosition, scene, cam),
                     child: CustomPaint(
                       painter: _ScenePainter(scene, widget.controller.parts, cam,

@@ -74,16 +74,38 @@ class _SketchCanvasState extends State<SketchCanvas> {
   static const double _snapRadius = 16.0;
 
   // View transform: screen = model * _zoom + _pan. Geometry is stored/edited in
-  // model coords; _pan/_zoom are recomputed each build (_pan also depends on the
-  // active part's reference loop, to center a face sketch). _zoom is scroll-wheel.
+  // model coords. Each build sets _pan = paneCenter - anchor*_zoom + _userPan:
+  // the anchor keeps a face sketch centered, _userPan is free two-finger panning,
+  // _zoom is pinch (touch) or scroll-wheel (desktop).
   double _zoom = 1;
   Offset _pan = Offset.zero;
+  Offset _userPan = Offset.zero; // accumulated two-finger pan
   Offset _toModel(Offset screen) => (screen - _pan) / _zoom;
+
+  static const double _minZoom = 0.25;
+  static const double _maxZoom = 12.0;
+
+  // Captured each build so the pinch handler can do focal-point math.
+  Offset _anchor = Offset.zero;
+  Offset _paneCenter = Offset.zero;
+
+  // Multi-touch pinch/pan state. While two fingers are down we zoom/pan the view
+  // and suppress drawing; one finger draws/selects as before.
+  final Map<int, Offset> _pointers = {};
+  bool _gesturing = false;
+  double _pinchStartZoom = 1;
+  double _pinchStartDist = 1;
+  Offset _pinchStartModel = Offset.zero; // model point under the initial focal
 
   final _focus = FocusNode();
 
   void _zoomBy(double dy) => setState(() {
-        _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.25, 12.0);
+        _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(_minZoom, _maxZoom);
+      });
+
+  void _resetView() => setState(() {
+        _zoom = 1;
+        _userPan = Offset.zero;
       });
 
   /// Movement below this (logical px) counts as a tap, not a stroke/drag.
@@ -94,6 +116,59 @@ class _SketchCanvasState extends State<SketchCanvas> {
   void dispose() {
     _focus.dispose();
     super.dispose();
+  }
+
+  // --- Pointer routing: 1 finger draws/selects, 2 fingers zoom/pan the view ---
+
+  void _pointerDown(int id, Offset pos) {
+    _pointers[id] = pos;
+    if (_pointers.length == 1) {
+      _onDown(pos);
+    } else if (_pointers.length == 2) {
+      // A second finger means "manipulate the view", not "draw": abandon any
+      // stroke/vertex-grab the first finger started, and begin the pinch.
+      _dragPoint = null;
+      _snapTarget = null;
+      setState(() => _active = null);
+      _gesturing = true;
+      final pts = _pointers.values.toList();
+      _pinchStartDist = (pts[0] - pts[1]).distance;
+      _pinchStartZoom = _zoom;
+      _pinchStartModel = _toModel((pts[0] + pts[1]) / 2);
+    }
+  }
+
+  void _pointerMove(int id, Offset pos) {
+    if (!_pointers.containsKey(id)) return;
+    _pointers[id] = pos;
+    if (_pointers.length >= 2) {
+      final pts = _pointers.values.toList();
+      final dist = (pts[0] - pts[1]).distance;
+      final focal = (pts[0] + pts[1]) / 2;
+      if (_pinchStartDist <= 0) return;
+      final z =
+          (_pinchStartZoom * dist / _pinchStartDist).clamp(_minZoom, _maxZoom);
+      // Keep the model point that was under the initial focal point under the
+      // (possibly moved) focal point — pinch zooms toward the fingers, and a
+      // two-finger drag pans. _pan = paneCenter - anchor*z + _userPan, so:
+      setState(() {
+        _zoom = z;
+        _userPan = focal - _pinchStartModel * z - _paneCenter + _anchor * z;
+      });
+    } else if (!_gesturing) {
+      _onMove(pos);
+    }
+  }
+
+  void _pointerUp(int id) {
+    _pointers.remove(id);
+    if (_gesturing) {
+      // Stay in gesture mode until every finger lifts, so a lingering finger
+      // can't start drawing mid-zoom.
+      if (_pointers.isEmpty) _gesturing = false;
+      return;
+    }
+    _onUp();
   }
 
   void _onDown(Offset screen) {
@@ -291,10 +366,10 @@ class _SketchCanvasState extends State<SketchCanvas> {
       child: LayoutBuilder(
         builder: (context, constraints) => Listener(
           behavior: HitTestBehavior.opaque,
-          onPointerDown: (e) => _onDown(e.localPosition),
-          onPointerMove: (e) => _onMove(e.localPosition),
-          onPointerUp: (e) => _onUp(),
-          onPointerCancel: (e) => _onUp(),
+          onPointerDown: (e) => _pointerDown(e.pointer, e.localPosition),
+          onPointerMove: (e) => _pointerMove(e.pointer, e.localPosition),
+          onPointerUp: (e) => _pointerUp(e.pointer),
+          onPointerCancel: (e) => _pointerUp(e.pointer),
           onPointerSignal: (e) {
             if (e is PointerScrollEvent) _zoomBy(e.scrollDelta.dy);
           },
@@ -302,18 +377,20 @@ class _SketchCanvasState extends State<SketchCanvas> {
             animation: widget.controller,
             builder: (context, _) {
               final reference = widget.controller.active.referenceLoop;
-              // Anchor the centering point at the pane center; zoom about it.
-              final anchor =
-                  SketchCanvas.anchorModel(constraints.biggest, reference);
-              final paneCenter = Offset(
+              // Anchor the centering point at the pane center; zoom about it,
+              // then apply the user's free two-finger pan on top.
+              _anchor = SketchCanvas.anchorModel(constraints.biggest, reference);
+              _paneCenter = Offset(
                   constraints.maxWidth / 2, constraints.maxHeight / 2);
-              _pan = paneCenter - anchor * _zoom;
+              _pan = _paneCenter - _anchor * _zoom + _userPan;
               final sel = _sel;
               final segHi = _selected ??
                   (sel?.kind == _SelKind.segment ? sel!.index : null);
               final circHi = _selectedCircle ??
                   (sel?.kind == _SelKind.circle ? sel!.index : null);
               final ptHi = sel?.kind == _SelKind.point ? sel!.index : null;
+              final viewMoved =
+                  (_zoom - 1).abs() > 1e-3 || _userPan != Offset.zero;
               return Stack(
                 children: [
                   CustomPaint(
@@ -322,6 +399,19 @@ class _SketchCanvasState extends State<SketchCanvas> {
                     size: Size.infinite,
                   ),
                   if (sel != null) _selectionBar(sel),
+                  if (viewMoved)
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: Tooltip(
+                        message: 'Reset view (${(_zoom * 100).round()}%)',
+                        child: FloatingActionButton.small(
+                          heroTag: null,
+                          onPressed: _resetView,
+                          child: const Icon(Icons.center_focus_strong),
+                        ),
+                      ),
+                    ),
                 ],
               );
             },

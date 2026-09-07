@@ -43,9 +43,10 @@ All notable changes to CADSketch. Format follows
 
 ### Export
 - STL export of the active part (binary STL), generated directly in-app (no
-  external tooling). Web downloads the file; desktop writes it. Drilled holes are
-  cut through the exported solid via a polygon-with-holes triangulation, so a
-  plate exports as a watertight, printable mesh with its holes. (iPad share is
+  external tooling). Web downloads the file; desktop writes it. Interior holes —
+  a circle decoration OR a sketched inner loop inside the profile — are cut
+  through the exported solid via a polygon-with-holes triangulation, so a plate
+  exports as a watertight, printable mesh with its holes. (iPad share is
   pending; boolean face features still need native OCCT.)
 - featuretree bridge: export a sketch to an editable FreeCAD/build123d feature
   tree.

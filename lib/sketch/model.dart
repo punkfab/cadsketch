@@ -393,14 +393,52 @@ class ParametricSketch {
   /// tessellated. Null if there's no single closed loop. Used for extrusion.
   List<Offset>? closedProfile() {
     final loop = closedLoop();
-    if (loop == null) return null;
+    return loop == null ? null : _profileForLoop(loop);
+  }
+
+  /// Every disjoint closed loop of the sketch (each vertex degree 2). Lets a
+  /// sketched inner loop be treated as a hole. Null if the graph isn't a clean
+  /// set of simple cycles.
+  List<List<int>>? allClosedLoops() {
+    if (points.isEmpty || segments.length != points.length) return null;
+    final adj = List.generate(points.length, (_) => <int>[]);
+    for (final s in segments) {
+      adj[s.a].add(s.b);
+      adj[s.b].add(s.a);
+    }
+    if (adj.any((n) => n.length != 2)) return null;
+
+    final visited = List.filled(points.length, false);
+    final loops = <List<int>>[];
+    for (var start = 0; start < points.length; start++) {
+      if (visited[start]) continue;
+      final loop = <int>[];
+      var prev = -1, cur = start;
+      do {
+        visited[cur] = true;
+        loop.add(cur);
+        final nbrs = adj[cur];
+        final next = nbrs[0] != prev ? nbrs[0] : nbrs[1];
+        prev = cur;
+        cur = next;
+        if (loop.length > points.length) return null;
+      } while (cur != start);
+      loops.add(loop);
+    }
+    return loops;
+  }
+
+  /// Tessellated profiles for every closed loop (see [allClosedLoops]).
+  List<List<Offset>> allProfiles() =>
+      [for (final loop in allClosedLoops() ?? const <List<int>>[]) _profileForLoop(loop)];
+
+  List<Offset> _profileForLoop(List<int> loop) {
     final profile = <Offset>[];
     for (var i = 0; i < loop.length; i++) {
       final ai = loop[i];
       final bi = loop[(i + 1) % loop.length];
       final seg = _segmentBetween(ai, bi);
       if (seg != null && seg.isArc) {
-        // Traverse the arc in the loop's direction (negate sweep if reversed).
         final forward = seg.a == ai;
         final sweep = forward ? seg.arc!.sweep : -seg.arc!.sweep;
         profile.addAll(_tessellateArc(points[ai], seg.arc!.center, seg.arc!.radius, sweep));

@@ -60,19 +60,41 @@ List<List<Vec3>> extrudeWithHolesTriangles(
   return tris;
 }
 
-/// Triangles for exporting a part: a holed extrude when the profile has interior
-/// circle holes, otherwise the part's own solid (or imported mesh). Unlike the
-/// wireframe [Part.buildSolid], this cuts interior circles through the solid so
-/// a plate exports WITH its holes.
+double _absArea(List<Offset> p) {
+  var a = 0.0;
+  for (var i = 0, j = p.length - 1; i < p.length; j = i++) {
+    a += (p[j].dx - p[i].dx) * (p[j].dy + p[i].dy);
+  }
+  return a.abs() / 2;
+}
+
+Offset _centroid(List<Offset> p) {
+  var x = 0.0, y = 0.0;
+  for (final o in p) {
+    x += o.dx;
+    y += o.dy;
+  }
+  return Offset(x / p.length, y / p.length);
+}
+
+/// Triangles for exporting a part, with holes cut through the solid. Interior
+/// loops — a sketched inner loop OR a circle decoration inside the profile —
+/// become drilled holes. The largest closed loop is the outer boundary. Unlike
+/// the wireframe [Part.buildSolid], this produces a watertight mesh WITH holes.
 List<List<Vec3>> partExportTriangles(Part part) {
-  final profile = part.sketch.closedProfile();
-  if (profile == null || profile.length < 3) {
+  final profiles = part.sketch.allProfiles()..sort((a, b) => _absArea(b).compareTo(_absArea(a)));
+  if (profiles.isEmpty || profiles.first.length < 3) {
     final s = part.buildSolid();
     return s == null ? const [] : solidTriangles(s);
   }
+  final outer = profiles.first;
   final holes = <List<Offset>>[
+    // Sketched inner loops contained in the outer boundary.
+    for (var i = 1; i < profiles.length; i++)
+      if (_inside(outer, _centroid(profiles[i]))) profiles[i],
+    // Circle decorations inside the outer boundary.
     for (final e in part.decorations)
-      if (e is CircleEntity && _inside(profile, e.center)) _tessellate(e),
+      if (e is CircleEntity && _inside(outer, e.center)) _tessellate(e),
   ];
-  return extrudeWithHolesTriangles(profile, holes, part.depth, part.plane);
+  return extrudeWithHolesTriangles(outer, holes, part.depth, part.plane);
 }

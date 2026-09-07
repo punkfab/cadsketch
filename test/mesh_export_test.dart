@@ -55,6 +55,24 @@ void main() {
     _expectWatertight(partExportTriangles(_plate(10, 10, 5)));
   });
 
+  test('a sketched inner loop is cut as a hole (watertight)', () {
+    final p = Part('frame')..depth = 6;
+    final s = p.sketch;
+    // Outer 30x30 loop (points 0..3).
+    s.points.addAll(const [Offset(0, 0), Offset(30, 0), Offset(30, 30), Offset(0, 30)]);
+    for (var i = 0; i < 4; i++) {
+      s.segments.add(Segment(i, (i + 1) % 4));
+    }
+    // Inner 10x10 loop (points 4..7) — a non-circular hole.
+    s.points.addAll(const [Offset(10, 10), Offset(20, 10), Offset(20, 20), Offset(10, 20)]);
+    for (var i = 0; i < 4; i++) {
+      s.segments.add(Segment(4 + i, 4 + (i + 1) % 4));
+    }
+    final tris = partExportTriangles(p);
+    expect(tris, isNotEmpty);
+    _expectWatertight(tris);
+  });
+
   test('a circle outside the profile is not treated as a hole', () {
     final p = _plate(10, 10, 5)..decorations.add(CircleEntity(const Offset(50, 50), 2));
     // No hole -> just the box (12 triangles).

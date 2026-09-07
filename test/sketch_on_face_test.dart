@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:ai_sketcher/sketch/model.dart';
 import 'package:ai_sketcher/sketch/plane.dart';
 import 'package:ai_sketcher/ui/sketch_canvas.dart';
 

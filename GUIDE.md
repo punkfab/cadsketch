@@ -93,6 +93,14 @@ expands to its **Sketch** (line/circle counts) and any **mate points**.
   to unmate; use **Clear all mates** to reset.
 - **Reuse a part:** **Duplicate** a part (deep copy) to place it more than once.
 
+## Import a DXF
+
+**⌘K → "Import DXF…"** brings a 2D CAD drawing in as a new sketch part. Lines,
+polylines, and arcs become the profile; circles become holes or a cylinder. The
+geometry is imported exactly as drawn — no auto-constraining — so you can then
+dimension and constrain it yourself. A closed outline extrudes like any sketch.
+On the web you pick the file in a browser dialog; on desktop you give a path.
+
 ## Export
 
 **Export STL (active part)** writes a binary STL, generated in-app with no

@@ -6,6 +6,10 @@ import 'export/mesh_export.dart';
 import 'export/stl.dart';
 import 'export/stl_export.dart';
 import 'ffi/sketch_kernel.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+import 'sketch/dxf.dart';
+import 'sketch/dxf_import.dart';
 import 'sketch/mesh_import.dart';
 import 'sketch/plane.dart';
 // import 'ui/ai_panel.dart'; // AI assistant sidebar disabled for now — re-enable with the layout below.
@@ -92,6 +96,49 @@ class _SketchHomeState extends State<SketchHome> {
     }
   }
 
+  Future<void> _importDxf() async {
+    // Web opens a file picker (no filesystem path); desktop prompts for a path.
+    ({String name, String text})? src;
+    try {
+      if (kIsWeb) {
+        src = await readDxf();
+      } else {
+        if (!mounted) return;
+        final path = await showDialog<String>(
+          context: context,
+          builder: (_) => const _ImportPathDialog(
+              title: 'Import DXF',
+              hint: '/home/you/part.dxf',
+              label: 'Path to .dxf',
+              note: null),
+        );
+        if (path == null || path.trim().isEmpty) return;
+        src = await readDxf(path: path.trim());
+      }
+      if (src == null) return; // cancelled
+      final drawing = parseDxf(src.text);
+      if (drawing.isEmpty) {
+        throw const _Msg('No supported entities found '
+            '(LINE / LWPOLYLINE / POLYLINE / CIRCLE / ARC)');
+      }
+      _controller.importDxf(_partNameFor(src.name), drawing);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Imported ${src.name} — ${drawing.entityCount} entities')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('DXF import failed: $e')));
+    }
+  }
+
+  /// A part name from a file name (strip extension).
+  String _partNameFor(String fileName) {
+    final dot = fileName.lastIndexOf('.');
+    return dot > 0 ? fileName.substring(0, dot) : fileName;
+  }
+
   Future<void> _openPalette() async {
     final cmd = await showDialog<_Command>(
       context: context,
@@ -175,6 +222,8 @@ class _SketchHomeState extends State<SketchHome> {
                 .showSnackBar(SnackBar(content: Text('STL export failed: $e')));
           }
         }),
+        _Command('Import DXF…', 'Import a DXF drawing as a new sketch part',
+            Icons.file_open_outlined, _importDxf),
         _Command('Add part', 'Start a new empty body', Icons.add,
             () async => _controller.addPart()),
         _Command(
@@ -376,10 +425,29 @@ class _ParamRowState extends State<_ParamRow> {
   }
 }
 
-/// Prompts for a mesh file path to import (.stl / .obj). A native file picker
-/// is a later refinement; typing/pasting a path keeps the harness dependency-free.
+/// A tiny exception whose message is shown verbatim (no "Exception:" prefix).
+class _Msg implements Exception {
+  const _Msg(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
+/// Prompts for a file path to import (desktop). A native file picker is a later
+/// refinement; typing/pasting a path keeps the harness dependency-free. On web
+/// the caller uses a browser file picker instead.
 class _ImportPathDialog extends StatefulWidget {
-  const _ImportPathDialog();
+  const _ImportPathDialog({
+    this.title = 'Import mesh',
+    this.label = 'Path to .stl or .obj',
+    this.hint = '/home/you/part.stl',
+    this.note = 'STEP? Convert to STL/OBJ (FreeCAD) for now.',
+  });
+
+  final String title;
+  final String label;
+  final String hint;
+  final String? note;
 
   @override
   State<_ImportPathDialog> createState() => _ImportPathDialogState();
@@ -397,7 +465,7 @@ class _ImportPathDialogState extends State<_ImportPathDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Import mesh'),
+      title: Text(widget.title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -405,15 +473,17 @@ class _ImportPathDialogState extends State<_ImportPathDialog> {
           TextField(
             controller: _field,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Path to .stl or .obj',
-              hintText: '/home/you/part.stl',
+            decoration: InputDecoration(
+              labelText: widget.label,
+              hintText: widget.hint,
             ),
             onSubmitted: (v) => Navigator.pop(context, v),
           ),
-          const SizedBox(height: 8),
-          const Text('STEP? Convert to STL/OBJ (FreeCAD) for now.',
-              style: TextStyle(fontSize: 11, color: Colors.white54)),
+          if (widget.note != null) ...[
+            const SizedBox(height: 8),
+            Text(widget.note!,
+                style: const TextStyle(fontSize: 11, color: Colors.white54)),
+          ],
         ],
       ),
       actions: [

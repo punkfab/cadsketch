@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../sketch/assembly.dart';
 import '../sketch/beautify.dart';
+import '../sketch/dxf.dart';
 import '../sketch/entities.dart';
 import '../sketch/model.dart';
 import '../sketch/part.dart';
@@ -646,6 +647,43 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Creates a new part whose sketch is a DXF drawing. LINE/LWPOLYLINE/POLYLINE
+  /// and ARC (tessellated) become the parametric profile; CIRCLE becomes a circle
+  /// decoration (a hole/cylinder via the usual profile-with-holes rule). DXF is
+  /// Y-up, so Y is flipped to appear upright in the Y-down canvas.
+  void importDxf(String name, DxfDrawing d) {
+    final part = Part(name);
+    Offset flip(Offset p) => Offset(p.dx, -p.dy);
+
+    final lines = <(Offset, Offset)>[];
+    for (final l in d.lines) {
+      lines.add((flip(l.a), flip(l.b)));
+    }
+    for (final pl in d.polylines) {
+      for (var i = 0; i + 1 < pl.points.length; i++) {
+        lines.add((flip(pl.points[i]), flip(pl.points[i + 1])));
+      }
+      if (pl.closed && pl.points.length > 2) {
+        lines.add((flip(pl.points.last), flip(pl.points.first)));
+      }
+    }
+    for (final a in d.arcs) {
+      final tess = _tessellateDxfArc(a);
+      for (var i = 0; i + 1 < tess.length; i++) {
+        lines.add((flip(tess[i]), flip(tess[i + 1])));
+      }
+    }
+
+    part.sketch.addImportedLines(lines, weld: _weldFor(lines));
+    for (final c in d.circles) {
+      part.decorations.add(CircleEntity(flip(c.center), c.radius));
+    }
+
+    parts.add(part);
+    activeIndex = parts.length - 1;
+    notifyListeners();
+  }
+
   void setActive(int index) {
     if (index < 0 || index >= parts.length || index == activeIndex) return;
     activeIndex = index;
@@ -974,6 +1012,44 @@ class SketchController extends ChangeNotifier {
     active.connectors.clear();
     notifyListeners();
   }
+}
+
+/// Tessellates a DXF arc (CCW from start to end angle) into points, ~10° apart.
+List<Offset> _tessellateDxfArc(DxfArc a) {
+  final s = a.startDeg * math.pi / 180;
+  final e = a.endDeg * math.pi / 180;
+  var sweep = e - s;
+  while (sweep <= 0) {
+    sweep += 2 * math.pi; // DXF arcs sweep CCW from start to end
+  }
+  final n = math.max(2, (sweep / (math.pi / 18)).ceil());
+  return [
+    for (var i = 0; i <= n; i++)
+      a.center +
+          Offset(math.cos(s + sweep * i / n), math.sin(s + sweep * i / n)) *
+              a.radius,
+  ];
+}
+
+/// Endpoint weld tolerance for an imported drawing: small, but scaled to the
+/// drawing's extent so exact CAD endpoints join without merging genuinely
+/// distinct points on a tiny part.
+double _weldFor(List<(Offset, Offset)> lines) {
+  if (lines.isEmpty) return 1e-6;
+  var minX = double.infinity, minY = double.infinity;
+  var maxX = -double.infinity, maxY = -double.infinity;
+  void ext(Offset p) {
+    minX = math.min(minX, p.dx);
+    minY = math.min(minY, p.dy);
+    maxX = math.max(maxX, p.dx);
+    maxY = math.max(maxY, p.dy);
+  }
+
+  for (final (a, b) in lines) {
+    ext(a);
+    ext(b);
+  }
+  return math.max(1e-6, math.max(maxX - minX, maxY - minY) * 1e-5);
 }
 
 class _SketchPainter extends CustomPainter {

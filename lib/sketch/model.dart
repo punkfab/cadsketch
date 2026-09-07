@@ -119,6 +119,27 @@ class ParametricSketch {
     if (added) solve();
   }
 
+  /// Adds imported line geometry (e.g. from DXF) FAITHFULLY: welds endpoints
+  /// that coincide within [weld], but runs no constraint inference and no solve,
+  /// so the profile matches the source drawing exactly (the solver would
+  /// otherwise snap near-axis edges and distort a precise import). The caller
+  /// pre-tessellates arcs into short segments. Points already in the sketch are
+  /// reused as weld targets.
+  void addImportedLines(List<(Offset, Offset)> lines, {double weld = 1e-6}) {
+    int idx(Offset p) {
+      for (var i = 0; i < points.length; i++) {
+        if ((points[i] - p).distance <= weld) return i;
+      }
+      points.add(p);
+      return points.length - 1;
+    }
+
+    for (final (a, b) in lines) {
+      final ia = idx(a), ib = idx(b);
+      if (ia != ib) segments.add(Segment(ia, ib));
+    }
+  }
+
   /// Adds one segment with inference but no solve. Returns its index, or null
   /// if it collapsed to zero length after merging.
   int? _addSegment(Offset a, Offset b) {

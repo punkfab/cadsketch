@@ -80,6 +80,15 @@ All notable changes to CADSketch. Format follows
   existing pins jump to the wrong place).
 - Assembly view: scroll-wheel zoom.
 
+### Import
+- Import a DXF drawing as a new sketch part (⌘K → "Import DXF…"). LINE,
+  LWPOLYLINE, POLYLINE and ARC become the parametric profile; CIRCLE becomes a
+  circle (a hole or cylinder via the usual profile rule). Geometry is imported
+  faithfully (no constraint inference or solve, so a precise drawing isn't
+  distorted); DXF's Y-up is flipped so it reads upright. On the web this opens a
+  file picker; on desktop it reads a file path. (Splines, ellipses and blocks are
+  ignored for now.)
+
 ### Export
 - STL export of the active part (binary STL), generated directly in-app (no
   external tooling). Web downloads the file; desktop writes it. Interior holes —

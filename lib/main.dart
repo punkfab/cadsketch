@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'export/featuretree_export.dart';
+import 'export/mesh_export.dart';
 import 'export/stl.dart';
 import 'export/stl_export.dart';
 import 'ffi/sketch_kernel.dart';
@@ -154,8 +155,8 @@ class _SketchHomeState extends State<SketchHome> {
             'Download/save the active part as a binary STL',
             Icons.download_outlined, () async {
           final part = _controller.active;
-          final solid = part.buildSolid();
-          if (solid == null) {
+          final tris = partExportTriangles(part); // holes cut through
+          if (tris.isEmpty) {
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Nothing to export yet — draw a part first')));
@@ -163,7 +164,7 @@ class _SketchHomeState extends State<SketchHome> {
           }
           try {
             final name = part.name.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_');
-            final where = await exportStl(name, solidToStlBytes(solid));
+            final where = await exportStl(name, trianglesToStlBytes(tris));
             if (!mounted) return;
             ScaffoldMessenger.of(context)
                 .showSnackBar(SnackBar(content: Text('Exported $where')));

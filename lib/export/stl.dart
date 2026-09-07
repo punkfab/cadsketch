@@ -4,27 +4,26 @@ import '../sketch/solid.dart';
 import '../sketch/transform3.dart';
 
 // Binary STL export. Pure Dart (no Flutter, no FFI) so it runs on every platform
-// and is unit-testable; a platform facade handles delivering the bytes to the
-// user (write a file / download / share).
+// and is unit-testable; a platform facade delivers the bytes to the user.
 
-/// Binary STL bytes for [solids], each optionally placed by the matching
-/// [transforms] entry (for an assembly). Faces are fan-triangulated and each
-/// facet gets a computed normal.
-Uint8List solidsToStlBytes(List<Solid> solids, {List<Transform3>? transforms}) {
+/// Fan-triangulates a solid's faces into triangles (3D point triples), each
+/// optionally transformed.
+List<List<Vec3>> solidTriangles(Solid s, {Transform3? transform}) {
   final tris = <List<Vec3>>[];
-  for (var si = 0; si < solids.length; si++) {
-    final s = solids[si];
-    final xf = (transforms != null && si < transforms.length) ? transforms[si] : null;
-    Vec3 place(int vi) => xf == null ? s.vertices[vi] : xf.apply(s.vertices[vi]);
-    for (final face in s.faces) {
-      for (var i = 1; i + 1 < face.length; i++) {
-        tris.add([place(face[0]), place(face[i]), place(face[i + 1])]);
-      }
+  Vec3 place(int vi) =>
+      transform == null ? s.vertices[vi] : transform.apply(s.vertices[vi]);
+  for (final face in s.faces) {
+    for (var i = 1; i + 1 < face.length; i++) {
+      tris.add([place(face[0]), place(face[i]), place(face[i + 1])]);
     }
   }
+  return tris;
+}
 
+/// Binary STL bytes from raw triangles (used by the holed-extrude mesh, which
+/// isn't a [Solid]). Each facet's normal is computed from its winding.
+Uint8List trianglesToStlBytes(List<List<Vec3>> tris) {
   final bytes = ByteData(84 + tris.length * 50);
-  // 80-byte header left zero; then the triangle count.
   bytes.setUint32(80, tris.length, Endian.little);
   var off = 84;
   void f32(double v) {
@@ -45,6 +44,17 @@ Uint8List solidsToStlBytes(List<Solid> solids, {List<Transform3>? transforms}) {
     off += 2; // attribute byte count
   }
   return bytes.buffer.asUint8List();
+}
+
+/// Binary STL for [solids], each optionally placed by [transforms] (assembly).
+Uint8List solidsToStlBytes(List<Solid> solids, {List<Transform3>? transforms}) {
+  final tris = <List<Vec3>>[];
+  for (var si = 0; si < solids.length; si++) {
+    final xf =
+        (transforms != null && si < transforms.length) ? transforms[si] : null;
+    tris.addAll(solidTriangles(solids[si], transform: xf));
+  }
+  return trianglesToStlBytes(tris);
 }
 
 /// Convenience for a single solid.

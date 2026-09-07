@@ -182,7 +182,10 @@ class _SceneViewState extends State<SceneView> {
         final scene = _buildScene(widget.controller.parts);
         return LayoutBuilder(
           builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 720;
+            // Side-by-side only in landscape with room; in portrait (e.g. an
+            // iPad held upright, ~1024pt wide) stack 3D on top, 2D below.
+            final wide = constraints.maxWidth >= 720 &&
+                constraints.maxWidth > constraints.maxHeight;
             final pane3d = _pane3d(scene);
             final pane2d = _pane2d();
             return Column(

@@ -43,15 +43,14 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
-  flutter_launcher_icons: ^0.14.1
 
-# Regenerate the iOS app icon set from the blueprint source:
-#   dart run flutter_launcher_icons
-flutter_launcher_icons:
-  ios: true
-  remove_alpha_ios: true
-  android: false
-  image_path: "assets/icon/cadsketch_icon.png"
+# App icon: assets/icon/cadsketch_icon.svg -> cadsketch_icon.png (1024, opaque);
+# the AppIcon.appiconset is generated + committed. To regenerate after editing
+# the source, add flutter_launcher_icons to dev_dependencies temporarily and run
+# `dart run flutter_launcher_icons` with:
+#   flutter_launcher_icons: {ios: true, remove_alpha_ios: true, android: false,
+#                            image_path: "assets/icon/cadsketch_icon.png"}
+# It's kept out of the normal deps because it displaces flutter_lints in solving.
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

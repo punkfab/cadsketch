@@ -363,7 +363,10 @@ class _SketchCanvasState extends State<SketchCanvas> {
     return KeyboardListener(
       focusNode: _focus,
       onKeyEvent: _onKey,
-      child: LayoutBuilder(
+      // Clip to the pane: panning/zooming the sketch must not paint the canvas
+      // outside its own bounds (it would spill into the adjacent 3D pane).
+      child: ClipRect(
+        child: LayoutBuilder(
         builder: (context, constraints) => Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: (e) => _pointerDown(e.pointer, e.localPosition),
@@ -416,6 +419,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
               );
             },
           ),
+        ),
         ),
       ),
     );
@@ -748,6 +752,10 @@ class _SketchPainter extends CustomPainter {
     canvas.save();
     canvas.translate(pan.dx, pan.dy); // model coords -> screen
     canvas.scale(zoom);
+    // The canvas is scaled by zoom, so anything meant to be a constant SCREEN
+    // size — line thickness, vertex dots — must be divided by zoom. Geometry
+    // (positions, circle/arc radii) stays in model units and scales normally.
+    final iz = 1 / zoom;
 
     // Face guide: the outline of the face this sketch sits on, so you can see
     // where you're drawing relative to the part.
@@ -756,7 +764,7 @@ class _SketchPainter extends CustomPainter {
       final guide = Paint()
         ..color = Colors.white.withValues(alpha: 0.22)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5;
+        ..strokeWidth = 1.5 * iz;
       final path = Path()..moveTo(ref.first.dx, ref.first.dy);
       for (var i = 1; i < ref.length; i++) {
         path.lineTo(ref[i].dx, ref[i].dy);
@@ -768,23 +776,23 @@ class _SketchPainter extends CustomPainter {
     final raw = Paint()
       ..color = Colors.blueGrey.shade400
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
+      ..strokeWidth = 1.5 * iz
       ..strokeCap = StrokeCap.round;
     final line = Paint()
       ..color = Colors.cyanAccent.shade400
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
+      ..strokeWidth = 2.5 * iz
       ..strokeCap = StrokeCap.round;
     final node = Paint()..color = Colors.cyanAccent.shade100;
     final junction = Paint()
       ..color = _glyphColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+      ..strokeWidth = 2 * iz;
 
     final circleHighlight = Paint()
       ..color = _glyphColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
+      ..strokeWidth = 4 * iz;
 
     // Decorative entities (non-line).
     final decs = controller.decorations;
@@ -798,7 +806,7 @@ class _SketchPainter extends CustomPainter {
         case CircleEntity(:final center, :final radius):
           canvas.drawCircle(
               center, radius, di == selectedCircle ? circleHighlight : line);
-          canvas.drawCircle(center, 3, node);
+          canvas.drawCircle(center, 3 * iz, node);
           final label = e.radiusParam != null
               ? '${e.radiusParam}=${radius.toStringAsFixed(0)}'
               : 'R${radius.toStringAsFixed(0)}';
@@ -811,7 +819,7 @@ class _SketchPainter extends CustomPainter {
           ):
           canvas.drawArc(Rect.fromCircle(center: center, radius: radius),
               startAngle, sweepAngle, false, line);
-          canvas.drawCircle(center, 3, node);
+          canvas.drawCircle(center, 3 * iz, node);
       }
     }
 
@@ -821,7 +829,7 @@ class _SketchPainter extends CustomPainter {
     final highlight = Paint()
       ..color = const Color(0xFFFFC857)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
+      ..strokeWidth = 4 * iz
       ..strokeCap = StrokeCap.round;
     for (var i = 0; i < m.segments.length; i++) {
       final s = m.segments[i];
@@ -841,17 +849,17 @@ class _SketchPainter extends CustomPainter {
     final selectedRing = Paint()
       ..color = _glyphColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
+      ..strokeWidth = 2.5 * iz;
     final snapRing = Paint()
       ..color = const Color(0xFF69F0AE) // green: "release to weld / close"
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
+      ..strokeWidth = 3 * iz;
     for (var i = 0; i < m.points.length; i++) {
       final p = m.points[i];
-      canvas.drawCircle(p, 3, node);
-      if (m.degree(i) >= 2) canvas.drawCircle(p, 6, junction);
-      if (i == selectedPoint) canvas.drawCircle(p, 9, selectedRing);
-      if (i == snapTarget) canvas.drawCircle(p, 11, snapRing);
+      canvas.drawCircle(p, 3 * iz, node);
+      if (m.degree(i) >= 2) canvas.drawCircle(p, 6 * iz, junction);
+      if (i == selectedPoint) canvas.drawCircle(p, 9 * iz, selectedRing);
+      if (i == snapTarget) canvas.drawCircle(p, 11 * iz, snapRing);
     }
     // Constraint glyphs.
     for (final c in m.constraints) {

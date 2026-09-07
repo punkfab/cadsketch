@@ -30,18 +30,39 @@ enum FeatureOp {
 /// A mate connector references a face of the part's solid. Its origin/normal
 /// are computed live from the solid, so they track depth/dimension edits.
 class MateConnector {
-  MateConnector(this.faceIndex);
+  MateConnector(this.faceIndex, {this.anchor});
+
+  /// The face index at creation time. Kept as a fallback, but face indices are
+  /// NOT stable across sketch edits — drilling a hole switches [Part.buildSolid]
+  /// to a longer face list — so [anchor] is the durable reference.
   final int faceIndex;
 
-  Vec3 origin(Solid s) => s.faceCentroid(faceIndex);
+  /// The face centroid captured when this connector was created, in the part's
+  /// local solid space. The outer boundary doesn't move when a hole is added
+  /// (holes only append faces), so re-resolving by nearest centroid keeps the
+  /// mate point on the same face across edits. Null for legacy connectors.
+  final Vec3? anchor;
+
+  /// The face this connector currently maps to: nearest centroid to [anchor],
+  /// so it survives face re-indexing (e.g. after a hole is drilled). Falls back
+  /// to the raw [faceIndex] when there's no anchor.
+  int resolvedFace(Solid s) {
+    if (s.faces.isEmpty) return 0;
+    final a = anchor;
+    if (a == null) return faceIndex.clamp(0, s.faces.length - 1);
+    return s.faceNearest(a);
+  }
+
+  Vec3 origin(Solid s) => s.faceCentroid(resolvedFace(s));
 
   /// The face normal, oriented OUTWARD (away from the solid's centroid). A
   /// fasten mate opposes the two normals to bring faces flush, so both must
   /// point out of their solids. Extruded caps share a profile winding, so the
   /// raw Newell normal can point inward — this corrects it.
   Vec3 normal(Solid s) {
-    final n = s.faceNormal(faceIndex);
-    final d = s.faceCentroid(faceIndex) - s.centroid; // outward direction
+    final f = resolvedFace(s);
+    final n = s.faceNormal(f);
+    final d = s.faceCentroid(f) - s.centroid; // outward direction
     final facingOut = n.x * d.x + n.y * d.y + n.z * d.z >= 0;
     return facingOut ? n : n * -1.0;
   }
@@ -63,6 +84,18 @@ class Part {
   /// face, so drawn geometry lands on the face (not flung off by absolute
   /// canvas pixel coordinates). Null for base-plane sketches.
   List<Offset>? referenceLoop;
+
+  /// The body this part is a feature ON — sketched on one of its faces. Used for
+  /// in-context display: the 3D view shows a face feature together with its
+  /// parent body so the containing part doesn't disappear when the feature
+  /// becomes active. Null for base bodies. (An object ref, not an index, so it
+  /// stays valid as parts are reordered.)
+  Part? parent;
+
+  /// The root body of this part's feature family: itself for a base body, else
+  /// the base body it (transitively) sits on. Parts sharing a root are shown
+  /// together in the 3D view.
+  Part get root => parent?.root ?? this;
 
   /// Non-parametric strokes (circles, arcs, scribbles) shown for context.
   final List<SketchEntity> decorations = [];
@@ -112,15 +145,21 @@ class Part {
   /// [buildSolid]). Shared by [buildSolid] and STL export so the 3D view and the
   /// exported mesh agree on holes.
   ({List<Offset> outer, List<List<Offset>> holes})? profileWithHoles() {
-    final profiles = sketch.allProfiles()
-      ..sort((a, b) => _absArea(b).compareTo(_absArea(a)));
-    if (profiles.isEmpty || profiles.first.length < 3) return null;
-    final outer = profiles.first;
-    final holes = <List<Offset>>[
-      for (var i = 1; i < profiles.length; i++)
-        if (_pointInPoly(outer, _centroid(profiles[i]))) profiles[i],
+    // Every closed region that could bound the extrude — a sketched loop OR a
+    // circle decoration — is a candidate. The largest by area is the outer
+    // boundary; any other whose centroid lies inside it is an interior hole.
+    // (Treating circles as outer candidates too fixes e.g. a sketched triangle
+    // hole inside a circle: the circle is the boundary, not the triangle.)
+    final candidates = <List<Offset>>[
+      ...sketch.allProfiles(),
       for (final e in decorations)
-        if (e is CircleEntity && _pointInPoly(outer, e.center)) _tessellate(e),
+        if (e is CircleEntity) _tessellate(e),
+    ]..sort((a, b) => _absArea(b).compareTo(_absArea(a)));
+    if (candidates.isEmpty || candidates.first.length < 3) return null;
+    final outer = candidates.first;
+    final holes = <List<Offset>>[
+      for (var i = 1; i < candidates.length; i++)
+        if (_pointInPoly(outer, _centroid(candidates[i]))) candidates[i],
     ];
     return (outer: outer, holes: holes);
   }
@@ -194,7 +233,7 @@ class Part {
       p.decorations.add(_cloneEntity(e));
     }
     for (final c in connectors) {
-      p.connectors.add(MateConnector(c.faceIndex));
+      p.connectors.add(MateConnector(c.faceIndex, anchor: c.anchor));
     }
     return p;
   }

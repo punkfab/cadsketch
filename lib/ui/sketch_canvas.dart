@@ -85,6 +85,60 @@ class _SketchCanvasState extends State<SketchCanvas> {
 
   int? _hoveredDim; // dimension label under the cursor (mouse hover)
 
+  // --- Line tool: tap-to-place chain of connected segments -----------------
+  // When on, one-finger taps place vertices instead of drawing freehand. The
+  // first tap sets the chain start (snapping onto an existing vertex if you tap
+  // near one — that's how you "continue a line from an existing point"); each
+  // later tap commits a segment and continues from there; tapping the first
+  // vertex closes the loop; Esc / Done ends the chain.
+  bool _lineTool = false;
+  Offset? _chainStart; // last placed vertex (model coords), or null = no chain
+  Offset? _chainFirst; // the chain's first vertex, for close detection
+  Offset? _linePreview; // where the rubber-band currently points (model coords)
+
+  /// Snaps a model point onto the nearest existing vertex within [_snapRadius],
+  /// else returns it unchanged — so taps land exactly on endpoints to weld.
+  Offset _snapModel(Offset m) {
+    final model = widget.controller.model;
+    final pi = model.hitTestPoint(m, radius: _snapRadius);
+    return pi != null ? model.points[pi] : m;
+  }
+
+  void _toggleLineTool() => setState(() {
+        _lineTool = !_lineTool;
+        _chainStart = _chainFirst = _linePreview = null;
+        _sel = null;
+      });
+
+  void _endChain() =>
+      setState(() => _chainStart = _chainFirst = _linePreview = null);
+
+  /// Commits the next chain vertex at [m] (already snapped). Starts the chain if
+  /// none is in progress; otherwise adds a segment from the previous vertex and
+  /// continues (or closes, if [m] is the chain's first vertex).
+  void _lineCommit(Offset m) {
+    final start = _chainStart;
+    if (start == null) {
+      setState(() {
+        _chainStart = m;
+        _chainFirst = m;
+      });
+      return;
+    }
+    if ((m - start).distance < 1e-3) return; // tapped the same point — ignore
+    widget.controller.addSegmentBetween(start, m);
+    final first = _chainFirst;
+    final closed = first != null && (m - first).distance < 1e-3;
+    setState(() {
+      _linePreview = null;
+      if (closed) {
+        _chainStart = _chainFirst = null;
+      } else {
+        _chainStart = m;
+      }
+    });
+  }
+
   /// The segment whose dimension label is under [screen] (tested in SCREEN
   /// space, since labels are drawn at a constant on-screen size). Fixes the
   /// click target drifting from the number at non-1 zoom.
@@ -154,7 +208,10 @@ class _SketchCanvasState extends State<SketchCanvas> {
       // stroke/vertex-grab the first finger started, and begin the pinch.
       _dragPoint = null;
       _snapTarget = null;
-      setState(() => _active = null);
+      setState(() {
+        _active = null;
+        _linePreview = null;
+      });
       _gesturing = true;
       final pts = _pointers.values.toList();
       _pinchStartDist = (pts[0] - pts[1]).distance;
@@ -200,6 +257,12 @@ class _SketchCanvasState extends State<SketchCanvas> {
     _downPos = screen;
     _dragMoved = false;
     _focus.requestFocus(); // so Delete/Backspace reaches us
+    if (_lineTool) {
+      // Line tool: taps place a chain; a press just previews where the next
+      // vertex would land (snapped to a nearby existing vertex).
+      setState(() => _linePreview = _snapModel(_toModel(screen)));
+      return;
+    }
     final m = _toModel(screen);
     final pi = widget.controller.model.hitTestPoint(m);
     if (pi != null) {
@@ -210,6 +273,10 @@ class _SketchCanvasState extends State<SketchCanvas> {
   }
 
   void _onMove(Offset screen) {
+    if (_lineTool) {
+      setState(() => _linePreview = _snapModel(_toModel(screen)));
+      return;
+    }
     if (_dragPoint != null) {
       if (!_dragMoved &&
           (_downPos == null || (screen - _downPos!).distance < _tapSlop)) {
@@ -229,6 +296,11 @@ class _SketchCanvasState extends State<SketchCanvas> {
   }
 
   void _onUp() {
+    if (_lineTool) {
+      final target = _linePreview;
+      if (target != null) _lineCommit(target);
+      return;
+    }
     final dp = _dragPoint;
     if (dp != null) {
       _dragPoint = null;
@@ -291,6 +363,12 @@ class _SketchCanvasState extends State<SketchCanvas> {
 
   void _onKey(KeyEvent e) {
     if (e is! KeyDownEvent) return;
+    if (e.logicalKey == LogicalKeyboardKey.escape) {
+      if (_lineTool && _chainStart != null) {
+        _endChain(); // finish the current chain without leaving the tool
+      }
+      return;
+    }
     if (e.logicalKey == LogicalKeyboardKey.delete ||
         e.logicalKey == LogicalKeyboardKey.backspace) {
       _deleteSelection();
@@ -393,17 +471,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
       // outside its own bounds (it would spill into the adjacent 3D pane).
       child: ClipRect(
         child: LayoutBuilder(
-        builder: (context, constraints) => Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: (e) => _pointerDown(e.pointer, e.localPosition),
-          onPointerMove: (e) => _pointerMove(e.pointer, e.localPosition),
-          onPointerHover: (e) => _onHover(e.localPosition),
-          onPointerUp: (e) => _pointerUp(e.pointer),
-          onPointerCancel: (e) => _pointerUp(e.pointer),
-          onPointerSignal: (e) {
-            if (e is PointerScrollEvent) _zoomBy(e.scrollDelta.dy);
-          },
-          child: AnimatedBuilder(
+          builder: (context, constraints) => AnimatedBuilder(
             animation: widget.controller,
             builder: (context, _) {
               final reference = widget.controller.active.referenceLoop;
@@ -423,12 +491,31 @@ class _SketchCanvasState extends State<SketchCanvas> {
                   (_zoom - 1).abs() > 1e-3 || _userPan != Offset.zero;
               return Stack(
                 children: [
-                  CustomPaint(
-                    painter: _SketchPainter(widget.controller, _active, segHi,
-                        circHi, ptHi, _pan, _zoom, reference, _snapTarget,
-                        _hoveredDim),
-                    size: Size.infinite,
+                  // Pointer handling lives ONLY on the canvas layer, so tapping
+                  // an overlay button (delete / reset / line tool) can't also
+                  // fire a canvas gesture and disrupt the button's tap.
+                  Positioned.fill(
+                    child: Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: (e) =>
+                          _pointerDown(e.pointer, e.localPosition),
+                      onPointerMove: (e) =>
+                          _pointerMove(e.pointer, e.localPosition),
+                      onPointerHover: (e) => _onHover(e.localPosition),
+                      onPointerUp: (e) => _pointerUp(e.pointer),
+                      onPointerCancel: (e) => _pointerUp(e.pointer),
+                      onPointerSignal: (e) {
+                        if (e is PointerScrollEvent) _zoomBy(e.scrollDelta.dy);
+                      },
+                      child: CustomPaint(
+                        painter: _SketchPainter(widget.controller, _active,
+                            segHi, circHi, ptHi, _pan, _zoom, reference,
+                            _snapTarget, _hoveredDim, _chainStart, _linePreview),
+                        size: Size.infinite,
+                      ),
+                    ),
                   ),
+                  _toolbar(),
                   if (sel != null) _selectionBar(sel),
                   if (viewMoved)
                     Positioned(
@@ -448,6 +535,39 @@ class _SketchCanvasState extends State<SketchCanvas> {
             },
           ),
         ),
+      ),
+    );
+  }
+
+  /// Top-left tool toggles. The Line tool turns one-finger taps into a
+  /// tap-to-place chain (so you can continue a line from an existing point);
+  /// while it's active a Done button ends the current chain.
+  Widget _toolbar() {
+    return Positioned(
+      left: 8,
+      top: 6,
+      child: Material(
+        color: const Color(0xE6161C22),
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Tooltip(
+              message: _lineTool
+                  ? 'Line tool on — tap to place points'
+                  : 'Line tool: tap to place a connected chain',
+              child: IconButton(
+                icon: const Icon(Icons.polyline, size: 20),
+                color: _lineTool ? const Color(0xFF4DD0E1) : Colors.white70,
+                onPressed: _toggleLineTool,
+              ),
+            ),
+            if (_lineTool && _chainStart != null)
+              TextButton(
+                onPressed: _endChain,
+                child: const Text('Done'),
+              ),
+          ],
         ),
       ),
     );
@@ -529,6 +649,14 @@ class SketchController extends ChangeNotifier {
   void setActive(int index) {
     if (index < 0 || index >= parts.length || index == activeIndex) return;
     activeIndex = index;
+    notifyListeners();
+  }
+
+  /// Adds a single line segment between two model points, welding each endpoint
+  /// onto an existing vertex within merge tolerance. This is how the Line tool
+  /// continues a chain from an existing point: pass the existing vertex as [a].
+  void addSegmentBetween(Offset a, Offset b) {
+    model.addLine(a, b);
     notifyListeners();
   }
 
@@ -701,12 +829,26 @@ class SketchController extends ChangeNotifier {
   /// "sketch on a base plane / on a face" entry point for multi-plane work.
   /// [reference] is the parent face's outline in plane-local coords (for a
   /// "sketch on a face"); it anchors the new sketch onto the face.
-  void addPlaneSketch(SketchPlane plane, {String? name, List<Offset>? reference}) {
+  void addPlaneSketch(SketchPlane plane,
+      {String? name, List<Offset>? reference, Part? parent}) {
     parts.add(Part(name ?? 'Part ${parts.length + 1}')
       ..plane = plane
-      ..referenceLoop = reference);
+      ..referenceLoop = reference
+      ..parent = parent);
     activeIndex = parts.length - 1;
     notifyListeners();
+  }
+
+  /// Indices of the parts shown together in the 3D view: the active part and
+  /// every part sharing its root body. A face feature (sketched on a parent's
+  /// face) thus renders in context on that parent, so the containing body
+  /// doesn't disappear when the feature is active.
+  List<int> visiblePartIndices() {
+    final root = active.root;
+    return [
+      for (var i = 0; i < parts.length; i++)
+        if (parts[i].root == root) i,
+    ];
   }
 
   /// Adds [text] to the active part as stroke geometry on its datum — the SAME
@@ -741,7 +883,16 @@ class SketchController extends ChangeNotifier {
   }
 
   void addConnector(int faceIndex) {
-    active.connectors.add(MateConnector(faceIndex));
+    // Anchor the connector to its face centroid so it survives face re-indexing
+    // (e.g. when a hole is later drilled and buildSolid returns a longer face
+    // list). resolvedFace() re-maps by nearest centroid on every use.
+    final solid = active.buildSolid();
+    final anchor = (solid != null &&
+            faceIndex >= 0 &&
+            faceIndex < solid.faces.length)
+        ? solid.faceCentroid(faceIndex)
+        : null;
+    active.connectors.add(MateConnector(faceIndex, anchor: anchor));
     notifyListeners();
   }
 
@@ -828,7 +979,7 @@ class SketchController extends ChangeNotifier {
 class _SketchPainter extends CustomPainter {
   _SketchPainter(this.controller, this.active, this.selected,
       this.selectedCircle, this.selectedPoint, this.pan, this.zoom, this.reference,
-      this.snapTarget, this.hoveredDim);
+      this.snapTarget, this.hoveredDim, this.chainStart, this.linePreview);
 
   final SketchController controller;
   final List<Offset>? active;
@@ -840,6 +991,8 @@ class _SketchPainter extends CustomPainter {
   final List<Offset>? reference; // parent face outline (guide), in model coords
   final int? snapTarget; // vertex a dragged point would weld onto (preview)
   final int? hoveredDim; // segment whose dimension label is hovered
+  final Offset? chainStart; // line tool: last placed vertex (model coords)
+  final Offset? linePreview; // line tool: current rubber-band target (model)
 
   static const _glyphColor = Color(0xFFFFC857);
 
@@ -962,6 +1115,34 @@ class _SketchPainter extends CustomPainter {
     // In-progress stroke (still in model space).
     final a = active;
     if (a != null && a.length >= 2) canvas.drawPath(_polyline(a), raw);
+
+    // Line tool: rubber-band from the last placed vertex to the current target,
+    // an accent dot on the anchor, and a green ring on the (snapped) target so
+    // "tap to place / weld here" reads.
+    final cs = chainStart;
+    final lp = linePreview;
+    if (cs != null) {
+      if (lp != null) {
+        canvas.drawLine(
+            cs,
+            lp,
+            Paint()
+              ..color = Colors.cyanAccent.shade400
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2 * iz
+              ..strokeCap = StrokeCap.round);
+      }
+      canvas.drawCircle(cs, 4 * iz, node);
+    }
+    if (lp != null) {
+      canvas.drawCircle(
+          lp,
+          5 * iz,
+          Paint()
+            ..color = const Color(0xFF69F0AE)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2 * iz);
+    }
 
     canvas.restore();
 

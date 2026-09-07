@@ -136,7 +136,7 @@ class _SceneViewState extends State<SceneView> {
     var bestD = 14.0;
     for (var j = 0; j < part.connectors.length; j++) {
       final con = part.connectors[j];
-      if (con.faceIndex < 0 || con.faceIndex >= solid.faces.length) continue;
+      if (solid.faces.isEmpty) continue;
       final d = (cam.project(con.origin(solid)) - p).distance;
       if (d < bestD) {
         bestD = d;
@@ -199,8 +199,10 @@ class _SceneViewState extends State<SceneView> {
     // Project the picked face's outline into the new plane's 2D coords so the
     // canvas can show it as a guide and anchor the sketch onto the face.
     final reference = [for (final vi in solid.faces[f]) plane.to2d(solid.vertices[vi])];
-    widget.controller
-        .addPlaneSketch(plane, name: 'Face sketch', reference: reference);
+    // Remember the body this feature sits on, so the 3D view keeps showing it.
+    final parent = widget.controller.parts[scene.items[i].authored];
+    widget.controller.addPlaneSketch(plane,
+        name: 'Face sketch', reference: reference, parent: parent);
     setState(() {
       _selItem = null;
       _selFace = null;
@@ -239,10 +241,12 @@ class _SceneViewState extends State<SceneView> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        // One part per tab: the 3D view shows only the active part (the full
-        // assembly lives in the Assembly view).
+        // One body per tab: the 3D view shows the active part's feature family
+        // (the active part plus anything sketched on its faces), so a face
+        // feature renders in context on its parent instead of alone. The full
+        // assembly lives in the Assembly view.
         final scene = _buildScene(widget.controller.parts,
-            onlyIndex: widget.controller.activeIndex);
+            only: widget.controller.visiblePartIndices().toSet());
         return LayoutBuilder(
           builder: (context, constraints) {
             // Side-by-side only in landscape with room; in portrait (e.g. an
@@ -545,12 +549,12 @@ class _Scene {
 // [onlyIndex] restricts the scene to a single authored part (the active tab) so
 // the 3D view shows one part at a time; null builds the whole assembly. The real
 // part index is preserved as `authored` either way, so tap/select still map back.
-_Scene _buildScene(List<Part> parts, {int? onlyIndex}) {
+_Scene _buildScene(List<Part> parts, {Set<int>? only}) {
   final items = <_Item>[];
   final mates = <_Mate>[];
   final index = <String, int>{}; // "authored:region" -> item index
   for (var ai = 0; ai < parts.length; ai++) {
-    if (onlyIndex != null && ai != onlyIndex) continue;
+    if (only != null && !only.contains(ai)) continue;
     final p = parts[ai];
     // A part with drilled holes can't be region-decomposed into simple polygon
     // solids (region loops don't carry holes), so render its holed solid
@@ -731,7 +735,7 @@ class _ScenePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
       for (final con in activePart.connectors) {
-        if (con.faceIndex < 0 || con.faceIndex >= aSolid.faces.length) continue;
+        if (aSolid.faces.isEmpty) continue;
         final o = con.origin(aSolid);
         final tip = o + con.normal(aSolid).normalized * (scene.radius * 0.18);
         final so = cam.project(o);

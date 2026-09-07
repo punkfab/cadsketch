@@ -6,6 +6,8 @@ fast on the sketch → beautify → constrain → dimension → AI loop. The eve
 product is a native iOS-only app; the one piece that survives that rebuild is
 the C++ geometry kernel behind the flat C ABI in `native/sketch_kernel.h`.
 
+For how to draw, dimension, hole, and assemble sketches, see **[GUIDE.md](GUIDE.md)**.
+
 ## Architecture
 
 ```

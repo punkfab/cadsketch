@@ -7,6 +7,14 @@ All notable changes to CADSketch. Format follows
 ## [Unreleased]
 
 ### Sketching (2D)
+- Line tool: tap to place a connected chain of segments. Tapping on (or near) an
+  existing vertex snaps and welds to it, so you can **continue a line from an
+  existing point**; tap the first vertex to close the loop, and Done/Esc ends the
+  chain. Freehand drawing still works with the tool off. See `GUIDE.md`.
+- Fixed: selecting a vertex and deleting it now works reliably on touch and web.
+  The on-canvas buttons (delete, reset view, line tool) previously lived inside
+  the drawing gesture layer, so tapping one could fire a canvas gesture mid-tap
+  and swallow the press; pointer handling is now isolated to the canvas itself.
 - Pinch-to-zoom and two-finger pan in the sketch canvas, with a reset-view
   button (scroll-wheel zoom on desktop). Stroke widths, vertex dots, constraint
   glyphs, and dimension labels stay a constant on-screen size at any zoom.
@@ -25,6 +33,14 @@ All notable changes to CADSketch. Format follows
   nothing in 3D.
 - Renders holed solids: a drilled circle or a sketched inner loop shows as a real
   through-hole in the wireframe, matching STL export.
+- Fixed: a hole whose outer boundary is a circle now renders and exports
+  correctly (e.g. a sketched triangle inside a circle, or a smaller circle inside
+  a bigger one). The largest closed region — sketched loop OR circle — is taken as
+  the outer boundary; anything inside it becomes a hole.
+- Fixed: a face feature (a sketch on a face) now renders in context on its parent
+  body. Previously the containing part disappeared and only the new extrusion
+  showed, because the view shows one body at a time; a face feature and its parent
+  are now treated as one family and shown together.
 - Clipped to its pane so zoomed geometry can't paint over the parts tabs.
 - Removed the explode/"scale" slider.
 
@@ -41,6 +57,10 @@ All notable changes to CADSketch. Format follows
   face on decomposed parts.
 - Duplicate a part (deep copy) to reuse it in an assembly; remove individual mate
   points (tap the pin) or clear a part's mate points.
+- Fixed: mate points stay on their face after a hole is drilled. A connector now
+  anchors to its face centroid and re-resolves the face each frame, instead of
+  storing a face index that shifts when the solid gains hole faces (which made
+  existing pins jump to the wrong place).
 - Assembly view: scroll-wheel zoom.
 
 ### Export

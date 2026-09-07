@@ -114,4 +114,6 @@ bodies need the native OCCT kernel.)
   reset-view button returns to 100%. Stroke widths, dimension labels, and
   constraint glyphs stay a constant on-screen size at any zoom.
 - **3D view:** one finger orbits, two dolly (scroll-wheel on desktop). Shows one
-  body per tab; portrait stacks 3D over 2D.
+  body per tab; portrait stacks 3D over 2D. The **cube/grid button** (top-left of
+  the 3D pane, and in the Assembly app bar) toggles between **wireframe** and a
+  **shaded** solid view.

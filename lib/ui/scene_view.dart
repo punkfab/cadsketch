@@ -31,6 +31,7 @@ class _SceneViewState extends State<SceneView> {
   double _pitch = -0.5;
   final double _explode = 0; // explode retired from the UI; kept at 0
   double _zoom = 1; // scroll-wheel zoom (shrinks the camera radius)
+  bool _shaded = false; // wireframe (default) vs flat-shaded solid rendering
   int? _selItem; // selected scene item (flattened index)
   int? _selFace; // selected face on that item (for "sketch on face")
   int? _hovItem; // face under the cursor (hover preview of what a tap selects)
@@ -313,9 +314,27 @@ class _SceneViewState extends State<SceneView> {
                           _hovItem,
                           _hovFace,
                           _palette,
-                          widget.controller.activeIndex),
+                          widget.controller.activeIndex,
+                          _shaded),
                       size: Size.infinite,
                     ),
+                  ),
+                ),
+              ),
+              // Wireframe / shaded toggle.
+              Positioned(
+                left: 8,
+                top: 8,
+                child: Material(
+                  color: const Color(0xE6161C22),
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    tooltip: _shaded ? 'Show wireframe' : 'Show shaded',
+                    icon: Icon(
+                        _shaded ? Icons.grid_on : Icons.view_in_ar,
+                        size: 20),
+                    color: Colors.white70,
+                    onPressed: () => setState(() => _shaded = !_shaded),
                   ),
                 ),
               ),
@@ -636,8 +655,10 @@ _Scene _buildScene(List<Part> parts, {Set<int>? only}) {
 
 class _ScenePainter extends CustomPainter {
   _ScenePainter(this.scene, this.parts, this.cam, this.explode, this.selItem,
-      this.selFace, this.hovItem, this.hovFace, this.palette, this.activeIndex);
+      this.selFace, this.hovItem, this.hovFace, this.palette, this.activeIndex,
+      this.shaded);
 
+  final bool shaded; // shaded (filled) vs wireframe rendering
   final _Scene scene;
   final List<Part> parts;
   final int activeIndex; // only this part's live sketch overlay is drawn
@@ -682,25 +703,23 @@ class _ScenePainter extends CustomPainter {
       }
     }
 
-    // Parts (wireframe), shifted by explode.
+    // Shaded mode: fill every face flat-shaded, all items sorted back-to-front
+    // (painter's algorithm) so nearer faces cover farther ones.
+    if (shaded) _paintShaded(canvas);
+
+    // Parts (wireframe), shifted by explode. In shaded mode the edges are drawn
+    // faint over the fill for definition (a "shaded with edges" look).
     for (var i = 0; i < scene.items.length; i++) {
       final solid = scene.items[i].solid;
       final shift = scene.explode(i, explode);
       final isSel = i == selItem;
-      // A face feature reads by colour: green adds material (union), red cuts
-      // (difference) — so "is this a union or a difference?" is answered on
-      // sight. Base bodies keep the neutral palette.
-      final part = parts[scene.items[i].authored];
-      final feature = part.referenceLoop != null;
-      final baseColor = feature
-          ? (part.isSubtractive
-              ? const Color(0xFFE57373)
-              : const Color(0xFF81C784))
-          : palette[i % palette.length];
+      final baseColor = _itemColor(i);
       final paint = Paint()
-        ..color = isSel ? Colors.white : baseColor
+        ..color = shaded
+            ? (isSel ? Colors.white : Colors.black.withValues(alpha: 0.35))
+            : (isSel ? Colors.white : baseColor)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = isSel ? 2.6 : 1.6
+        ..strokeWidth = isSel ? 2.6 : (shaded ? 1.0 : 1.6)
         ..strokeCap = StrokeCap.round;
       for (final e in solid.edges) {
         canvas.drawLine(cam.project(solid.vertices[e[0]] + shift),
@@ -775,6 +794,50 @@ class _ScenePainter extends CustomPainter {
       axis(plane.v, const Color(0xFF69F0AE)); // Y — green
       axis(plane.normal, const Color(0xFF448AFF)); // Z — blue
       canvas.drawCircle(so, 3.5, Paint()..color = Colors.white);
+    }
+  }
+
+  /// A body's base colour: a face feature reads green (union) / red (cut); base
+  /// bodies use the neutral palette.
+  Color _itemColor(int i) {
+    final part = parts[scene.items[i].authored];
+    final feature = part.referenceLoop != null;
+    return feature
+        ? (part.isSubtractive
+            ? const Color(0xFFE57373)
+            : const Color(0xFF81C784))
+        : palette[i % palette.length];
+  }
+
+  /// Flat-shaded fill of every face across all items, sorted back-to-front
+  /// (painter's algorithm). Shade = ambient + diffuse by |normal·view| — the
+  /// abs makes it independent of winding (our caps can wind either way). A
+  /// near-black backdrop lerps toward each body's colour.
+  void _paintShaded(Canvas canvas) {
+    final faces = <({int item, int face, double depth})>[];
+    for (var i = 0; i < scene.items.length; i++) {
+      final solid = scene.items[i].solid;
+      final shift = scene.explode(i, explode);
+      for (var f = 0; f < solid.faces.length; f++) {
+        faces.add((
+          item: i,
+          face: f,
+          depth: cam.depthOf(solid.faceCentroid(f) + shift),
+        ));
+      }
+    }
+    faces.sort((a, b) => a.depth.compareTo(b.depth)); // far first
+    const bg = Color(0xFF0E1216);
+    for (final e in faces) {
+      final solid = scene.items[e.item].solid;
+      final shift = scene.explode(e.item, explode);
+      final rn = cam.rotate(solid.faceNormal(e.face));
+      final len = rn.length;
+      final facing = len < 1e-9 ? 0.0 : (rn.z / len).abs();
+      final shade = 0.28 + 0.72 * facing;
+      final fill = Color.lerp(bg, _itemColor(e.item), shade)!;
+      canvas.drawPath(
+          _facePath(solid, solid.faces[e.face], shift), Paint()..color = fill);
     }
   }
 

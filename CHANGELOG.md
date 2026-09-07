@@ -47,6 +47,11 @@ All notable changes to CADSketch. Format follows
 - Fixed: a face sketch's plane normal is oriented outward on every face, so a
   boss/pocket extrudes the intended way even on a cylinder's back faces (the raw
   winding-dependent normal could point inward and reverse the extrude).
+- Wireframe / shaded toggle: switch either 3D view (the part view and the
+  Assembly view) between the wireframe and a simple flat-shaded solid. Shading is
+  per-face (ambient + diffuse by facing angle), with faces drawn back-to-front so
+  nearer ones cover farther ones. Toggle is top-left of the 3D pane (part view)
+  and in the Assembly app bar.
 - Clipped to its pane so zoomed geometry can't paint over the parts tabs.
 - Removed the explode/"scale" slider.
 

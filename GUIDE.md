@@ -70,6 +70,19 @@ The face feature is shown **in context on its parent body** — the containing p
 stays visible with the new feature on it, not on its own. (The full multi-part
 assembly lives in the **Assembly view**.)
 
+## Organizing parts — the tree
+
+The collapsible left panel lists every part as a tree: base bodies at the root,
+with **face features nested under the body they were sketched on**. Each part
+expands to its **Sketch** (line/circle counts) and any **mate points**.
+
+- **Switch parts:** tap a row to make it active (it's highlighted, and it's what
+  the 2D canvas edits and the 3D view shows in context).
+- **Add a body:** **+ Add part** at the bottom.
+- **Duplicate / delete:** the ⋮ menu on a part row.
+- **Collapse:** the ‹ chevron shrinks the panel to a thin rail; tap the tree icon
+  to bring it back.
+
 ## Mates & assembly
 
 - **Add a mate point:** select a face and press **Add mate point**. Its pin marks

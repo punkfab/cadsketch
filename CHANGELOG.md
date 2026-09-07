@@ -44,6 +44,13 @@ All notable changes to CADSketch. Format follows
 - Clipped to its pane so zoomed geometry can't paint over the parts tabs.
 - Removed the explode/"scale" slider.
 
+### Parts & navigation
+- Parts tree: a collapsible left panel replaces the flat tab strip. Base bodies
+  are roots and face features nest under the body they were sketched on; each
+  part expands to its Sketch (line/circle counts) and mate points. Tap a row to
+  make its part active; a per-part menu duplicates or deletes it; the panel
+  collapses to a thin rail. (The tabs stopped making sense once parts nested.)
+
 ### Modeling
 - Face features declare an explicit operation — Union (adds material, green) or
   Difference (cuts, red) — with auto direction and a Flip; default is union/out.

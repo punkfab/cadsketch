@@ -10,6 +10,7 @@ import 'sketch/mesh_import.dart';
 import 'sketch/plane.dart';
 // import 'ui/ai_panel.dart'; // AI assistant sidebar disabled for now — re-enable with the layout below.
 import 'ui/assembly_view.dart';
+import 'ui/part_tree.dart';
 import 'ui/scene_view.dart';
 import 'ui/sketch_canvas.dart';
 
@@ -258,61 +259,18 @@ class _SketchHomeState extends State<SketchHome> {
           ),
         ],
       ),
-      body: Column(
+      body: Row(
         children: [
-          _PartsBar(controller: _controller),
-          // AI assistant sidebar disabled for now. To restore, wrap SceneView in
-          // a Row and add `AiPanel(controller: _controller)` after it (and
-          // uncomment the ai_panel.dart import above).
+          // Parts/sketches tree (collapsible). Replaces the flat tab strip now
+          // that parts nest (base bodies -> face features).
+          PartTree(controller: _controller),
+          const VerticalDivider(width: 1),
+          // AI assistant sidebar disabled for now. To restore, add
+          // `AiPanel(controller: _controller)` after SceneView (and uncomment the
+          // ai_panel.dart import above).
           Expanded(child: SceneView(controller: _controller)),
         ],
       ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Horizontal bar of part chips with an add button — switch the active part
-/// without leaving the canvas (the "jump between parts" UX).
-class _PartsBar extends StatelessWidget {
-  const _PartsBar({required this.controller});
-
-  final SketchController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) => Container(
-        height: 48,
-        color: const Color(0xFF161C22),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: controller.parts.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 6),
-                itemBuilder: (context, i) {
-                  final selected = i == controller.activeIndex;
-                  return Center(
-                    child: ChoiceChip(
-                      label: Text(controller.parts[i].name),
-                      selected: selected,
-                      onSelected: (_) => controller.setActive(i),
-                    ),
-                  );
-                },
-              ),
-            ),
-            IconButton(
-              tooltip: 'Add part',
-              icon: const Icon(Icons.add),
-              onPressed: controller.addPart,
-            ),
-          ],
         ),
       ),
     );

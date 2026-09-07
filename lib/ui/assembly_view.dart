@@ -109,7 +109,7 @@ class _AssemblyViewState extends State<AssemblyView> {
           ),
           body: scenes.isEmpty
               ? const Center(
-                  child: Text('No parts with a closed profile to assemble.'))
+                  child: Text('Draw at least one closed part to assemble.'))
               : Column(
                   children: [
                     Expanded(

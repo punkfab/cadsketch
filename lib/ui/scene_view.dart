@@ -179,7 +179,10 @@ class _SceneViewState extends State<SceneView> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        final scene = _buildScene(widget.controller.parts);
+        // One part per tab: the 3D view shows only the active part (the full
+        // assembly lives in the Assembly view).
+        final scene = _buildScene(widget.controller.parts,
+            onlyIndex: widget.controller.activeIndex);
         return LayoutBuilder(
           builder: (context, constraints) {
             // Side-by-side only in landscape with room; in portrait (e.g. an
@@ -236,8 +239,17 @@ class _SceneViewState extends State<SceneView> {
                     onScaleUpdate: _onScaleUpdate,
                     onTapUp: (e) => _tap(e.localPosition, scene, cam),
                     child: CustomPaint(
-                      painter: _ScenePainter(scene, widget.controller.parts, cam,
-                          _explode, _selItem, _selFace, _hovItem, _hovFace, _palette),
+                      painter: _ScenePainter(
+                          scene,
+                          widget.controller.parts,
+                          cam,
+                          _explode,
+                          _selItem,
+                          _selFace,
+                          _hovItem,
+                          _hovFace,
+                          _palette,
+                          widget.controller.activeIndex),
                       size: Size.infinite,
                     ),
                   ),
@@ -466,11 +478,15 @@ class _Scene {
 }
 
 /// Decomposes every part on its own plane and flattens into one scene.
-_Scene _buildScene(List<Part> parts) {
+// [onlyIndex] restricts the scene to a single authored part (the active tab) so
+// the 3D view shows one part at a time; null builds the whole assembly. The real
+// part index is preserved as `authored` either way, so tap/select still map back.
+_Scene _buildScene(List<Part> parts, {int? onlyIndex}) {
   final items = <_Item>[];
   final mates = <_Mate>[];
   final index = <String, int>{}; // "authored:region" -> item index
   for (var ai = 0; ai < parts.length; ai++) {
+    if (onlyIndex != null && ai != onlyIndex) continue;
     final p = parts[ai];
     // Emboss: raise this part's surface marks (text / freehand) into 3D by
     // thickening each stroke into a ribbon and extruding it on the plane — the
@@ -533,10 +549,11 @@ _Scene _buildScene(List<Part> parts) {
 
 class _ScenePainter extends CustomPainter {
   _ScenePainter(this.scene, this.parts, this.cam, this.explode, this.selItem,
-      this.selFace, this.hovItem, this.hovFace, this.palette);
+      this.selFace, this.hovItem, this.hovFace, this.palette, this.activeIndex);
 
   final _Scene scene;
   final List<Part> parts;
+  final int activeIndex; // only this part's live sketch overlay is drawn
   final Camera cam;
   final double explode;
   final int? selItem;
@@ -547,8 +564,10 @@ class _ScenePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Live sketches on their planes (the active part brighter).
+    // Live sketch of the active part on its plane (only the active part is
+    // shown in 3D, matching its scene solids).
     for (var ai = 0; ai < parts.length; ai++) {
+      if (ai != activeIndex) continue;
       final p = parts[ai];
       final paint = Paint()
         ..color = Colors.cyanAccent.shade700.withValues(alpha: 0.7)

@@ -957,6 +957,19 @@ class _SketchPainter extends CustomPainter {
     for (final (pos, label) in circleLabels) {
       _dimLabel(canvas, _toScreen(pos), label, true);
     }
+
+    // Origin datum crosshair (the part's bounding-box centre), constant size.
+    final origin = controller.active.originLocal();
+    if (origin != null) {
+      final o = _toScreen(origin);
+      final ox = Paint()
+        ..color = const Color(0xFF80D8FF)
+        ..strokeWidth = 1.5;
+      const r = 9.0;
+      canvas.drawLine(o + const Offset(-r, 0), o + const Offset(r, 0), ox);
+      canvas.drawLine(o + const Offset(0, -r), o + const Offset(0, r), ox);
+      canvas.drawCircle(o, 2.5, Paint()..color = const Color(0xFF80D8FF));
+    }
   }
 
   // Model coords -> screen (pane) coords, matching the canvas transform

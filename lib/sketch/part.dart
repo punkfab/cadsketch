@@ -122,6 +122,32 @@ class Part {
     return null;
   }
 
+  /// The part's origin datum in the plane's 2D coordinates: the bounding-box
+  /// centre of the sketch geometry (points + circles). This is the reference
+  /// frame's origin — rendered as an axis triad in 3D and a crosshair in 2D so
+  /// it's obvious where a part's origin is. Null when there's no geometry yet.
+  Offset? originLocal() {
+    double? minX, minY, maxX, maxY;
+    void ext(double x, double y) {
+      minX = (minX == null) ? x : math.min(minX!, x);
+      minY = (minY == null) ? y : math.min(minY!, y);
+      maxX = (maxX == null) ? x : math.max(maxX!, x);
+      maxY = (maxY == null) ? y : math.max(maxY!, y);
+    }
+
+    for (final p in sketch.points) {
+      ext(p.dx, p.dy);
+    }
+    for (final e in decorations) {
+      if (e is CircleEntity) {
+        ext(e.center.dx - e.radius, e.center.dy - e.radius);
+        ext(e.center.dx + e.radius, e.center.dy + e.radius);
+      }
+    }
+    if (minX == null) return null;
+    return Offset((minX! + maxX!) / 2, (minY! + maxY!) / 2);
+  }
+
   /// A deep copy of this part under [newName] — used to reuse a part more than
   /// once in an assembly. Sketch, decorations, mate connectors, and every
   /// parameter are duplicated; an imported mesh solid is shared (it's not

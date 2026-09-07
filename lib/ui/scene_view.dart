@@ -733,6 +733,30 @@ class _ScenePainter extends CustomPainter {
         canvas.drawLine(so, cam.project(tip), pinLine);
       }
     }
+
+    // Origin datum of the active part: an XYZ axis triad at the sketch's
+    // bounding-box centre, so it's obvious where the part's origin is.
+    final o2 = activePart.originLocal();
+    if (o2 != null) {
+      final plane = activePart.plane;
+      final o3 = plane.to3d(o2);
+      final so = cam.project(o3);
+      final len = scene.radius * 0.3;
+      void axis(Vec3 dir, Color color) {
+        canvas.drawLine(
+            so,
+            cam.project(o3 + dir.normalized * len),
+            Paint()
+              ..color = color
+              ..strokeWidth = 2
+              ..strokeCap = StrokeCap.round);
+      }
+
+      axis(plane.u, const Color(0xFFFF5252)); // X — red
+      axis(plane.v, const Color(0xFF69F0AE)); // Y — green
+      axis(plane.normal, const Color(0xFF448AFF)); // Z — blue
+      canvas.drawCircle(so, 3.5, Paint()..color = Colors.white);
+    }
   }
 
   /// Projected outline of a solid's face ring (shifted by explode).

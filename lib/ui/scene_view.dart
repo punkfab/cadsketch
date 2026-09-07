@@ -174,6 +174,29 @@ class _SceneViewState extends State<SceneView> {
     });
   }
 
+  // Adds a mate point (connector) on the selected face of the active part: its
+  // origin is the face centroid and its normal the face normal. Fasten two mate
+  // points on different parts in the Assembly view to bring the faces flush.
+  void _addMatePoint() {
+    final i = _selItem, f = _selFace;
+    if (i == null || f == null) return;
+    // Tapping the face already made its part active; the face index matches the
+    // active part's own solid for a single-body part (decomposed-region faces
+    // are a follow-up). Add the connector there.
+    widget.controller.addConnector(f);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Mate point added — open Assembly and tap two mate points '
+            'on different parts to fasten them.'),
+        duration: Duration(seconds: 3),
+      ));
+    }
+    setState(() {
+      _selItem = null;
+      _selFace = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -259,10 +282,21 @@ class _SceneViewState extends State<SceneView> {
                 Positioned(
                   right: 8,
                   top: 8,
-                  child: FilledButton.icon(
-                    onPressed: () => _sketchOnSelectedFace(scene),
-                    icon: const Icon(Icons.draw, size: 18),
-                    label: const Text('Sketch on face'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => _sketchOnSelectedFace(scene),
+                        icon: const Icon(Icons.draw, size: 18),
+                        label: const Text('Sketch on face'),
+                      ),
+                      const SizedBox(height: 8),
+                      FilledButton.tonalIcon(
+                        onPressed: _addMatePoint,
+                        icon: const Icon(Icons.push_pin_outlined, size: 18),
+                        label: const Text('Add mate point'),
+                      ),
+                    ],
                   ),
                 ),
             ],
@@ -641,6 +675,26 @@ class _ScenePainter extends CustomPainter {
     for (final m in scene.mates) {
       _connector(canvas, m.itemA, m.faceA, mateDot, mateLine);
       _connector(canvas, m.itemB, m.faceB, mateDot, mateLine);
+    }
+
+    // User-added mate points on the active part: a pin at the face centroid with
+    // a stub along the face normal (the frame that fastens flush to another).
+    final activePart = parts[activeIndex];
+    final aSolid = activePart.buildSolid();
+    if (aSolid != null) {
+      final pinFill = Paint()..color = const Color(0xFFFFC857);
+      final pinLine = Paint()
+        ..color = const Color(0xFFFFC857)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      for (final con in activePart.connectors) {
+        if (con.faceIndex < 0 || con.faceIndex >= aSolid.faces.length) continue;
+        final o = con.origin(aSolid);
+        final tip = o + con.normal(aSolid).normalized * (scene.radius * 0.18);
+        final so = cam.project(o);
+        canvas.drawCircle(so, 5, pinFill);
+        canvas.drawLine(so, cam.project(tip), pinLine);
+      }
     }
   }
 

@@ -70,6 +70,10 @@ All notable changes to CADSketch. Format follows
   face on decomposed parts.
 - Duplicate a part (deep copy) to reuse it in an assembly; remove individual mate
   points (tap the pin) or clear a part's mate points.
+- Fixed: the Assembly view merges a face feature into its parent body. Each base
+  body is one assembly component, rendered with its bosses/pockets extruded
+  in-context on their faces — a feature is no longer shown as a separate,
+  mispositioned body parked off to the side. Mates connect base bodies.
 - Fixed: mate points stay on their face after a hole is drilled. A connector now
   anchors to its face centroid and re-resolves the face each frame, instead of
   storing a face index that shifts when the solid gains hole faces (which made

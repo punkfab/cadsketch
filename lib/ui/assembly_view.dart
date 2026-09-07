@@ -4,6 +4,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../sketch/assembly.dart';
+import '../sketch/part.dart';
+import '../sketch/plane.dart';
 import '../sketch/solid.dart';
 import 'camera.dart';
 import 'sketch_canvas.dart';
@@ -151,22 +153,18 @@ class _AssemblyViewState extends State<AssemblyView> {
   }
 
   List<_PartScene> _buildScenes() {
-    final parts = widget.controller.parts;
-    final transforms = solveAssembly(parts, widget.controller.mates);
-    final scenes = <_PartScene>[];
-    for (var i = 0; i < parts.length; i++) {
-      final solid = parts[i].buildSolid();
-      if (solid == null) continue;
-      final xf = transforms[i]!;
-      scenes.add(_PartScene(
-        partIndex: i,
-        color: _palette[i % _palette.length],
-        verts: [for (final v in solid.vertices) xf.apply(v)],
-        edges: solid.edges,
-        connectors: [for (final con in parts[i].connectors) xf.apply(con.origin(solid))],
-      ));
-    }
-    return scenes;
+    final bodies =
+        assemblyBodies(widget.controller.parts, widget.controller.mates);
+    return [
+      for (var k = 0; k < bodies.length; k++)
+        _PartScene(
+          partIndex: bodies[k].partIndex,
+          color: _palette[k % _palette.length],
+          verts: bodies[k].verts,
+          edges: bodies[k].edges,
+          connectors: bodies[k].connectors,
+        ),
+    ];
   }
 
   Camera _fitCamera(Size size, List<_PartScene> scenes) {
@@ -183,6 +181,68 @@ class _AssemblyViewState extends State<AssemblyView> {
     return Camera(
         size: size, center: c, radius: r / _zoom, yaw: _yaw, pitch: _pitch);
   }
+}
+
+/// One renderable assembly body: world-space geometry + mate-point positions,
+/// tagged with the base [partIndex] it belongs to (for mate selection).
+typedef AssemblyBody = ({
+  int partIndex,
+  List<Vec3> verts,
+  List<List<int>> edges,
+  List<Vec3> connectors,
+});
+
+/// Builds the assembly's bodies: one per BASE part (a root, no parent), with its
+/// face features merged in-context — each feature extruded on its own plane so
+/// it sits on the parent face, not as a separate parked body. The whole family
+/// is placed by the root's assembly transform; mates connect base bodies.
+List<AssemblyBody> assemblyBodies(List<Part> parts, List<Mate> mates) {
+  final transforms = solveAssembly(parts, mates);
+  final bodies = <AssemblyBody>[];
+  for (var i = 0; i < parts.length; i++) {
+    final p = parts[i];
+    if (p.parent != null) continue; // features are merged into their root
+    final rootSolid = p.buildSolid();
+
+    final verts = <Vec3>[];
+    final edges = <List<int>>[];
+    void add(Solid s) {
+      final base = verts.length;
+      verts.addAll(s.vertices);
+      for (final e in s.edges) {
+        edges.add([e[0] + base, e[1] + base]);
+      }
+    }
+
+    if (rootSolid != null) add(rootSolid);
+    for (final f in parts) {
+      if (f.parent == null || !identical(f.root, p)) continue;
+      final fs = _featureSolid(f);
+      if (fs != null) add(fs);
+    }
+    if (verts.isEmpty) continue;
+
+    final xf = transforms[i]!;
+    bodies.add((
+      partIndex: i,
+      verts: [for (final v in verts) xf.apply(v)],
+      edges: edges,
+      connectors: rootSolid == null
+          ? const <Vec3>[]
+          : [for (final con in p.connectors) xf.apply(con.origin(rootSolid))],
+    ));
+  }
+  return bodies;
+}
+
+/// A face feature's solid extruded ON ITS PLANE (in the parent's local frame),
+/// so it sits on the parent face. Direction follows the feature's operation
+/// (union out / difference in) via [Part.dirSign]. Holes are ignored for the
+/// assembly wireframe — placement is what matters here.
+Solid? _featureSolid(Part f) {
+  final pw = f.profileWithHoles();
+  if (pw == null) return null;
+  return extrudeOnPlane(pw.outer, f.plane, f.depth * f.dirSign);
 }
 
 class _PartScene {

@@ -722,6 +722,73 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Duplicates part [index] (deep copy) and makes the copy active, so a part
+  /// can be reused more than once in an assembly.
+  void duplicatePart(int index) {
+    if (index < 0 || index >= parts.length) return;
+    parts.add(parts[index].clone('${parts[index].name} copy'));
+    activeIndex = parts.length - 1;
+    notifyListeners();
+  }
+
+  /// The index of a mate that uses (part, connector), or null — lets the
+  /// assembly view unmate by tapping a mated point.
+  int? mateIndexFor(int part, int connector) {
+    for (var i = 0; i < mates.length; i++) {
+      final m = mates[i];
+      if ((m.partA == part && m.connectorA == connector) ||
+          (m.partB == part && m.connectorB == connector)) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  void removeMate(int index) {
+    if (index < 0 || index >= mates.length) return;
+    mates.removeAt(index);
+    notifyListeners();
+  }
+
+  void clearMates() {
+    if (mates.isEmpty) return;
+    mates.clear();
+    notifyListeners();
+  }
+
+  /// Removes a mate point (connector) from a part, dropping any mates that used
+  /// it and reindexing the connectors above it.
+  void removeConnector(int partIndex, int connectorIndex) {
+    if (partIndex < 0 || partIndex >= parts.length) return;
+    final cons = parts[partIndex].connectors;
+    if (connectorIndex < 0 || connectorIndex >= cons.length) return;
+    cons.removeAt(connectorIndex);
+    final kept = <Mate>[];
+    for (final m in mates) {
+      if ((m.partA == partIndex && m.connectorA == connectorIndex) ||
+          (m.partB == partIndex && m.connectorB == connectorIndex)) {
+        continue; // mate used the removed point
+      }
+      var ca = m.connectorA, cb = m.connectorB;
+      if (m.partA == partIndex && ca > connectorIndex) ca--;
+      if (m.partB == partIndex && cb > connectorIndex) cb--;
+      kept.add(Mate(m.partA, ca, m.partB, cb));
+    }
+    mates
+      ..clear()
+      ..addAll(kept);
+    notifyListeners();
+  }
+
+  /// Removes every mate point from a part (and any mates that used them).
+  void clearConnectors(int partIndex) {
+    if (partIndex < 0 || partIndex >= parts.length) return;
+    if (parts[partIndex].connectors.isEmpty) return;
+    parts[partIndex].connectors.clear();
+    mates.removeWhere((m) => m.partA == partIndex || m.partB == partIndex);
+    notifyListeners();
+  }
+
   void clear() {
     model.clear();
     decorations.clear();

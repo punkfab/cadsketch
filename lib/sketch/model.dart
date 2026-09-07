@@ -82,6 +82,25 @@ class ParametricSketch {
     constraints.clear();
   }
 
+  /// A deep copy: points (Offsets are values), segments (with their arc /
+  /// dimension state), and constraints are all duplicated into a fresh sketch.
+  ParametricSketch clone() {
+    final s = ParametricSketch();
+    s.points.addAll(points);
+    for (final seg in segments) {
+      final ns = Segment(seg.a, seg.b)
+        ..drivingLength = seg.drivingLength
+        ..lengthParam = seg.lengthParam;
+      final arc = seg.arc;
+      if (arc != null) ns.arc = ArcData(arc.center, arc.radius, arc.sweep);
+      s.segments.add(ns);
+    }
+    for (final c in constraints) {
+      s.constraints.add(SketchConstraint(c.kind, List<int>.from(c.segments)));
+    }
+    return s;
+  }
+
   /// Adds a drawn line, inferring constraints against existing geometry, then
   /// re-solves the whole sketch in place.
   void addLine(Offset a, Offset b) {

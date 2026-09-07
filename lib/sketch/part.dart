@@ -112,6 +112,34 @@ class Part {
     return null;
   }
 
+  /// A deep copy of this part under [newName] — used to reuse a part more than
+  /// once in an assembly. Sketch, decorations, mate connectors, and every
+  /// parameter are duplicated; an imported mesh solid is shared (it's not
+  /// mutated after import).
+  Part clone(String newName) {
+    final p = Part(newName)
+      ..plane = plane
+      ..depth = depth
+      ..embossDepth = embossDepth
+      ..operation = operation
+      ..flipDirection = flipDirection
+      ..referenceLoop =
+          referenceLoop == null ? null : List<Offset>.from(referenceLoop!)
+      ..importedSolid = importedSolid;
+    final cs = sketch.clone();
+    p.sketch.points.addAll(cs.points);
+    p.sketch.segments.addAll(cs.segments);
+    p.sketch.constraints.addAll(cs.constraints);
+    p.regionDepths.addAll(regionDepths);
+    for (final e in decorations) {
+      p.decorations.add(_cloneEntity(e));
+    }
+    for (final c in connectors) {
+      p.connectors.add(MateConnector(c.faceIndex));
+    }
+    return p;
+  }
+
   CircleEntity? _lastCircle() {
     for (final e in decorations.reversed) {
       if (e is CircleEntity) return e;
@@ -127,3 +155,15 @@ class Part {
                   c.radius,
       ];
 }
+
+/// Deep copy of a decoration entity (mutable fields — stroke points, circle
+/// radius/param — are duplicated so an edit to the copy doesn't touch the
+/// original).
+SketchEntity _cloneEntity(SketchEntity e) => switch (e) {
+      RawStroke(:final points) => RawStroke(List<Offset>.from(points)),
+      LineEntity(:final a, :final b) => LineEntity(a, b),
+      CircleEntity(:final center, :final radius, :final radiusParam) =>
+        CircleEntity(center, radius, radiusParam: radiusParam),
+      ArcEntity(:final center, :final radius, :final startAngle, :final sweepAngle) =>
+        ArcEntity(center, radius, startAngle, sweepAngle),
+    };

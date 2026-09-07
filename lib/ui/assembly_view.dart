@@ -64,6 +64,13 @@ class _AssemblyViewState extends State<AssemblyView> {
       }
     }
     if (hit == null) return;
+    // Tapping an already-mated point unmates it.
+    final existing = widget.controller.mateIndexFor(hit.part, hit.connector);
+    if (existing != null) {
+      widget.controller.removeMate(existing);
+      setState(() => _selected = null);
+      return;
+    }
     final sel = _selected;
     if (sel == null) {
       setState(() => _selected = hit);
@@ -92,6 +99,12 @@ class _AssemblyViewState extends State<AssemblyView> {
                       style: const TextStyle(fontSize: 12, color: Color(0xFFFFC857))),
                 ),
               ),
+              if (widget.controller.mates.isNotEmpty)
+                IconButton(
+                  tooltip: 'Clear all mates',
+                  icon: const Icon(Icons.link_off),
+                  onPressed: () => widget.controller.clearMates(),
+                ),
             ],
           ),
           body: scenes.isEmpty
@@ -126,7 +139,8 @@ class _AssemblyViewState extends State<AssemblyView> {
                     ),
                     const Padding(
                       padding: EdgeInsets.all(10),
-                      child: Text('Tap two connectors on different parts to fasten them.',
+                      child: Text('Tap two mate points on different parts to fasten; '
+                          'tap a mated point to unmate.',
                           style: TextStyle(fontSize: 12, color: Colors.white54)),
                     ),
                   ],

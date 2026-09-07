@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../sketch/assembly.dart';
@@ -22,6 +23,7 @@ class AssemblyView extends StatefulWidget {
 class _AssemblyViewState extends State<AssemblyView> {
   double _yaw = 0.6;
   double _pitch = -0.5;
+  double _zoom = 1; // scroll-wheel / pinch zoom (shrinks the fit radius)
   bool _moved = false;
   Camera? _camera;
   ({int part, int connector})? _selected;
@@ -41,6 +43,11 @@ class _AssemblyViewState extends State<AssemblyView> {
       _pitch = (_pitch + d.dy * 0.01).clamp(-math.pi / 2, math.pi / 2);
     });
   }
+
+  // Scroll up (negative delta) zooms in. Clamped so the model can't be lost.
+  void _zoomBy(double dy) => setState(() {
+        _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.2, 12.0);
+      });
 
   void _tap(Offset p, List<_PartScene> scenes) {
     final cam = _camera;
@@ -102,6 +109,11 @@ class _AssemblyViewState extends State<AssemblyView> {
                           onPointerUp: (e) {
                             if (!_moved) _tap(e.localPosition, scenes);
                           },
+                          onPointerSignal: (e) {
+                            if (e is PointerScrollEvent) {
+                              _zoomBy(e.scrollDelta.dy);
+                            }
+                          },
                           child: Container(
                             color: const Color(0xFF101418),
                             child: CustomPaint(
@@ -154,7 +166,8 @@ class _AssemblyViewState extends State<AssemblyView> {
     for (final v in all) {
       r = math.max(r, (v - c).length);
     }
-    return Camera(size: size, center: c, radius: r, yaw: _yaw, pitch: _pitch);
+    return Camera(
+        size: size, center: c, radius: r / _zoom, yaw: _yaw, pitch: _pitch);
   }
 }
 

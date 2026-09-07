@@ -94,10 +94,13 @@ class _SceneViewState extends State<SceneView> {
         if (!_pointInPoly(p, poly)) continue;
         final c = solid.faceCentroid(f) + shift;
         final n = solid.faceNormal(f);
-        // Front-facing test using only depthOf: nudging the centroid along its
-        // outward normal moves it toward the camera (depth grows) iff the face
-        // points at us. Grazing faces (~0) are kept — they're still selectable.
-        if (cam.depthOf(c + n * 0.01) < cam.depthOf(c) - 1e-9) continue;
+        // Depth of THIS face's surface under the cursor (ray vs the face's
+        // plane). We do NOT cull by normal direction: extruded caps share the
+        // profile winding, so one cap's normal points inward, and a normal-based
+        // front-face test would wrongly drop whichever faces are wound "inward"
+        // for some orientations. The plane is the same regardless of normal sign,
+        // so the front-most depth already selects the visible face; occluded
+        // faces just sort behind and are reachable by click-to-cycle.
         final hit = cam.rayPlaneHit(p, c, n);
         final d = hit == null ? -double.infinity : cam.depthOf(hit);
         cands.add((item: i, face: f, depth: d));
@@ -124,7 +127,37 @@ class _SceneViewState extends State<SceneView> {
     return inside;
   }
 
+  // A mate point of the active part under the cursor, or null.
+  int? _hitConnector(Offset p, Camera cam) {
+    final part = widget.controller.active;
+    final solid = part.buildSolid();
+    if (solid == null) return null;
+    int? best;
+    var bestD = 14.0;
+    for (var j = 0; j < part.connectors.length; j++) {
+      final con = part.connectors[j];
+      if (con.faceIndex < 0 || con.faceIndex >= solid.faces.length) continue;
+      final d = (cam.project(con.origin(solid)) - p).distance;
+      if (d < bestD) {
+        bestD = d;
+        best = j;
+      }
+    }
+    return best;
+  }
+
   void _tap(Offset p, _Scene scene, Camera cam) {
+    // Tapping a mate-point pin removes just that point.
+    final con = _hitConnector(p, cam);
+    if (con != null) {
+      widget.controller.removeConnector(widget.controller.activeIndex, con);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Mate point removed'),
+            duration: Duration(seconds: 2)));
+      }
+      return;
+    }
     final all = _hitAll(p, scene, cam);
     // Re-clicking the same spot steps to the next face behind the current one;
     // a click at a new spot resets to the front-most (closest) face.

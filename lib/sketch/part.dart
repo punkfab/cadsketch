@@ -34,7 +34,17 @@ class MateConnector {
   final int faceIndex;
 
   Vec3 origin(Solid s) => s.faceCentroid(faceIndex);
-  Vec3 normal(Solid s) => s.faceNormal(faceIndex);
+
+  /// The face normal, oriented OUTWARD (away from the solid's centroid). A
+  /// fasten mate opposes the two normals to bring faces flush, so both must
+  /// point out of their solids. Extruded caps share a profile winding, so the
+  /// raw Newell normal can point inward — this corrects it.
+  Vec3 normal(Solid s) {
+    final n = s.faceNormal(faceIndex);
+    final d = s.faceCentroid(faceIndex) - s.centroid; // outward direction
+    final facingOut = n.x * d.x + n.y * d.y + n.z * d.z >= 0;
+    return facingOut ? n : n * -1.0;
+  }
 }
 
 class Part {

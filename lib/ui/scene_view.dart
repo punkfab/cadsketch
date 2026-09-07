@@ -210,13 +210,17 @@ class _SceneViewState extends State<SceneView> {
   // Adds a mate point (connector) on the selected face of the active part: its
   // origin is the face centroid and its normal the face normal. Fasten two mate
   // points on different parts in the Assembly view to bring the faces flush.
-  void _addMatePoint() {
+  void _addMatePoint(_Scene scene) {
     final i = _selItem, f = _selFace;
     if (i == null || f == null) return;
-    // Tapping the face already made its part active; the face index matches the
-    // active part's own solid for a single-body part (decomposed-region faces
-    // are a follow-up). Add the connector there.
-    widget.controller.addConnector(f);
+    // The face was picked on the scene ITEM's solid (a decomposition region for
+    // a multi-region part), but a connector is interpreted against the part's
+    // OWN solid. Map the picked face to the nearest face on that solid so the
+    // mate point lands on the right face regardless of decomposition.
+    final partSolid = widget.controller.active.buildSolid();
+    if (partSolid == null) return;
+    final pickedCentroid = scene.items[i].solid.faceCentroid(f);
+    widget.controller.addConnector(partSolid.faceNearest(pickedCentroid));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Mate point added — open Assembly and tap two mate points '
@@ -325,7 +329,7 @@ class _SceneViewState extends State<SceneView> {
                       ),
                       const SizedBox(height: 8),
                       FilledButton.tonalIcon(
-                        onPressed: _addMatePoint,
+                        onPressed: () => _addMatePoint(scene),
                         icon: const Icon(Icons.push_pin_outlined, size: 18),
                         label: const Text('Add mate point'),
                       ),

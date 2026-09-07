@@ -67,6 +67,23 @@ class Solid {
     }
     return Vec3(nx, ny, nz).normalized;
   }
+
+  /// Index of the face whose centroid is closest to [p]. Used to map a face
+  /// picked on a decomposition-region solid onto the corresponding face of the
+  /// part's own solid (which is the frame a mate connector is interpreted in),
+  /// so a mate point can't land on the wrong face.
+  int faceNearest(Vec3 p) {
+    var best = 0;
+    var bestD = double.infinity;
+    for (var f = 0; f < faces.length; f++) {
+      final d = (faceCentroid(f) - p).length;
+      if (d < bestD) {
+        bestD = d;
+        best = f;
+      }
+    }
+    return best;
+  }
 }
 
 /// Extrudes a closed 2D profile (in the sketch's X/Y) by [depth] along Z into a

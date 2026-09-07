@@ -29,7 +29,7 @@ class SceneView extends StatefulWidget {
 class _SceneViewState extends State<SceneView> {
   double _yaw = 0.6;
   double _pitch = -0.5;
-  double _explode = 0;
+  final double _explode = 0; // explode retired from the UI; kept at 0
   double _zoom = 1; // scroll-wheel zoom (shrinks the camera radius)
   int? _selItem; // selected scene item (flattened index)
   int? _selFace; // selected face on that item (for "sketch on face")
@@ -422,13 +422,6 @@ class _SceneViewState extends State<SceneView> {
           ),
         ),
         const SizedBox(width: 12),
-        const Icon(Icons.open_in_full, size: 16, color: Colors.white54),
-        Expanded(
-          child: Slider(
-            value: _explode,
-            onChanged: (v) => setState(() => _explode = v),
-          ),
-        ),
         const Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12)),
         Expanded(
           child: Slider(
@@ -635,11 +628,13 @@ class _ScenePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Live sketch of the active part on its plane (only the active part is
-    // shown in 3D, matching its scene solids).
+    // Live sketch of the active part on its plane — only once it forms a solid
+    // (a closed profile / circle). An open, non-closed path renders nothing in
+    // 3D until it can actually be built.
     for (var ai = 0; ai < parts.length; ai++) {
       if (ai != activeIndex) continue;
       final p = parts[ai];
+      if (p.buildSolid() == null) continue;
       final paint = Paint()
         ..color = Colors.cyanAccent.shade700.withValues(alpha: 0.7)
         ..style = PaintingStyle.stroke
@@ -735,9 +730,10 @@ class _ScenePainter extends CustomPainter {
     }
 
     // Origin datum of the active part: an XYZ axis triad at the sketch's
-    // bounding-box centre, so it's obvious where the part's origin is.
+    // bounding-box centre — only once the part forms a solid (nothing floats in
+    // 3D before then).
     final o2 = activePart.originLocal();
-    if (o2 != null) {
+    if (o2 != null && aSolid != null) {
       final plane = activePart.plane;
       final o3 = plane.to3d(o2);
       final so = cam.project(o3);

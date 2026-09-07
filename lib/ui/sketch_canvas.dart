@@ -81,6 +81,31 @@ class _SketchCanvasState extends State<SketchCanvas> {
   Offset _pan = Offset.zero;
   Offset _userPan = Offset.zero; // accumulated two-finger pan
   Offset _toModel(Offset screen) => (screen - _pan) / _zoom;
+  Offset _toScreenPt(Offset model) => model * _zoom + _pan;
+
+  int? _hoveredDim; // dimension label under the cursor (mouse hover)
+
+  /// The segment whose dimension label is under [screen] (tested in SCREEN
+  /// space, since labels are drawn at a constant on-screen size). Fixes the
+  /// click target drifting from the number at non-1 zoom.
+  int? _hitDimensionScreen(Offset screen) {
+    final m = widget.controller.model;
+    int? best;
+    var bestD = 24.0; // generous px radius around the number
+    for (var si = 0; si < m.segments.length; si++) {
+      final d = (_toScreenPt(m.dimAnchor(si)) - screen).distance;
+      if (d < bestD) {
+        bestD = d;
+        best = si;
+      }
+    }
+    return best;
+  }
+
+  void _onHover(Offset screen) {
+    final h = _hitDimensionScreen(screen);
+    if (h != _hoveredDim) setState(() => _hoveredDim = h);
+  }
 
   static const double _minZoom = 0.25;
   static const double _maxZoom = 12.0;
@@ -242,8 +267,9 @@ class _SketchCanvasState extends State<SketchCanvas> {
 
   void _handleTap(Offset p) {
     final m = widget.controller.model;
-    // The dimension label is a precise target → open its editor directly.
-    final di = m.hitTestDimension(p);
+    // The dimension number is the target — hit-test it in screen space so the
+    // click lands on the drawn label regardless of zoom.
+    final di = _hitDimensionScreen(_toScreenPt(p));
     if (di != null) {
       _editDimension(di);
       return;
@@ -371,6 +397,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
           behavior: HitTestBehavior.opaque,
           onPointerDown: (e) => _pointerDown(e.pointer, e.localPosition),
           onPointerMove: (e) => _pointerMove(e.pointer, e.localPosition),
+          onPointerHover: (e) => _onHover(e.localPosition),
           onPointerUp: (e) => _pointerUp(e.pointer),
           onPointerCancel: (e) => _pointerUp(e.pointer),
           onPointerSignal: (e) {
@@ -398,7 +425,8 @@ class _SketchCanvasState extends State<SketchCanvas> {
                 children: [
                   CustomPaint(
                     painter: _SketchPainter(widget.controller, _active, segHi,
-                        circHi, ptHi, _pan, _zoom, reference, _snapTarget),
+                        circHi, ptHi, _pan, _zoom, reference, _snapTarget,
+                        _hoveredDim),
                     size: Size.infinite,
                   ),
                   if (sel != null) _selectionBar(sel),
@@ -800,7 +828,7 @@ class SketchController extends ChangeNotifier {
 class _SketchPainter extends CustomPainter {
   _SketchPainter(this.controller, this.active, this.selected,
       this.selectedCircle, this.selectedPoint, this.pan, this.zoom, this.reference,
-      this.snapTarget);
+      this.snapTarget, this.hoveredDim);
 
   final SketchController controller;
   final List<Offset>? active;
@@ -811,6 +839,7 @@ class _SketchPainter extends CustomPainter {
   final double zoom;
   final List<Offset>? reference; // parent face outline (guide), in model coords
   final int? snapTarget; // vertex a dragged point would weld onto (preview)
+  final int? hoveredDim; // segment whose dimension label is hovered
 
   static const _glyphColor = Color(0xFFFFC857);
 
@@ -952,7 +981,8 @@ class _SketchPainter extends CustomPainter {
           : isDriving
               ? value.toStringAsFixed(1)
               : '(${value.toStringAsFixed(0)})';
-      _dimLabel(canvas, _toScreen(m.dimAnchor(si)), label, isDriving);
+      _dimLabel(canvas, _toScreen(m.dimAnchor(si)), label, isDriving,
+          highlighted: si == hoveredDim);
     }
     for (final (pos, label) in circleLabels) {
       _dimLabel(canvas, _toScreen(pos), label, true);
@@ -1076,23 +1106,36 @@ class _SketchPainter extends CustomPainter {
   static const _drivingColor = Color(0xFF4DD0E1); // accent — drives geometry
   static const _drivenColor = Color(0xFF90A4AE); // gray — reference only
 
-  void _dimLabel(Canvas canvas, Offset center, String text, bool driving) {
+  void _dimLabel(Canvas canvas, Offset center, String text, bool driving,
+      {bool highlighted = false}) {
     final tp = TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
-          color: driving ? _drivingColor : _drivenColor,
+          color: highlighted
+              ? Colors.white
+              : (driving ? _drivingColor : _drivenColor),
           fontSize: 12,
-          fontWeight: driving ? FontWeight.bold : FontWeight.normal,
+          fontWeight: driving || highlighted ? FontWeight.bold : FontWeight.normal,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
     final rect = RRect.fromRectAndRadius(
         Rect.fromCenter(
-            center: center, width: tp.width + 8, height: tp.height + 4),
+            center: center, width: tp.width + 10, height: tp.height + 6),
         const Radius.circular(3));
-    canvas.drawRRect(rect, Paint()..color = const Color(0xCC1A2026));
+    // Hover: brighter fill + accent border so it reads as a click target.
+    canvas.drawRRect(
+        rect, Paint()..color = highlighted ? const Color(0xFF2B3A47) : const Color(0xCC1A2026));
+    if (highlighted) {
+      canvas.drawRRect(
+          rect,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..color = _drivingColor);
+    }
     tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
   }
 

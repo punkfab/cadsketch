@@ -213,7 +213,10 @@ class _SceneViewState extends State<SceneView> {
   }
 
   Widget _pane3d(_Scene scene) {
-    return Container(
+    // Clip to the pane: zoomed-in geometry must not paint past the pane edge
+    // (it was spilling up into the parts tabs above).
+    return ClipRect(
+      child: Container(
       color: const Color(0xFF0E1216),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -253,6 +256,7 @@ class _SceneViewState extends State<SceneView> {
             ],
           );
         },
+      ),
       ),
     );
   }

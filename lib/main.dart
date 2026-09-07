@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'export/featuretree_export.dart';
+import 'export/stl.dart';
+import 'export/stl_export.dart';
 import 'ffi/sketch_kernel.dart';
 import 'sketch/mesh_import.dart';
 import 'sketch/plane.dart';
@@ -146,6 +148,29 @@ class _SketchHomeState extends State<SketchHome> {
             if (!mounted) return;
             ScaffoldMessenger.of(context)
                 .showSnackBar(SnackBar(content: Text('Export failed: $e')));
+          }
+        }),
+        _Command('Export STL (active part)',
+            'Download/save the active part as a binary STL',
+            Icons.download_outlined, () async {
+          final part = _controller.active;
+          final solid = part.buildSolid();
+          if (solid == null) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Nothing to export yet — draw a part first')));
+            return;
+          }
+          try {
+            final name = part.name.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_');
+            final where = await exportStl(name, solidToStlBytes(solid));
+            if (!mounted) return;
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('Exported $where')));
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('STL export failed: $e')));
           }
         }),
         _Command('Add part', 'Start a new empty body', Icons.add,

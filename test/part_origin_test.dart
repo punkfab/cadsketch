@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ai_sketcher/sketch/entities.dart';
-import 'package:ai_sketcher/sketch/model.dart';
 import 'package:ai_sketcher/sketch/part.dart';
 
 // The part origin datum is the bounding-box centre of the sketch geometry

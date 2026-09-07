@@ -38,6 +38,10 @@ dependencies:
   # Native memory helpers (calloc/malloc) for the dart:ffi kernel bridge.
   ffi: ^2.1.3
 
+  # Browser bindings (Blob/URL/anchor) for the web STL download. Pure Dart,
+  # wasm-safe (dart:html is not available under dart2wasm).
+  web: ^1.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

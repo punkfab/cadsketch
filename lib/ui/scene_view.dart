@@ -368,6 +368,10 @@ class _SceneViewState extends State<SceneView> {
   Widget _controls(_Scene scene) {
     final sel = _selItem;
     final c = widget.controller;
+    // A face feature exposes its extrude length in _faceFeatureRow ("Length"),
+    // so the generic part-depth slider below would be a duplicate — suppress it
+    // for a face sketch (a selected region still gets its own override slider).
+    final isFeature = c.active.referenceLoop != null;
     final Widget body;
     if (sel != null && sel < scene.items.length) {
       final region = scene.items[sel].region;
@@ -425,16 +429,20 @@ class _SceneViewState extends State<SceneView> {
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
         ),
-        const SizedBox(width: 12),
-        const Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12)),
-        Expanded(
-          child: Slider(
-            value: c.active.depth.clamp(5, 400),
-            min: 5,
-            max: 400,
-            onChanged: (v) => c.setDepth(v),
+        // The face-feature row already carries the length slider; only the
+        // base-plane part needs the generic depth slider here.
+        if (!isFeature) ...[
+          const SizedBox(width: 12),
+          const Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12)),
+          Expanded(
+            child: Slider(
+              value: c.active.depth.clamp(5, 400),
+              min: 5,
+              max: 400,
+              onChanged: (v) => c.setDepth(v),
+            ),
           ),
-        ),
+        ],
       ]);
     }
     // A face sketch is a feature ON a body: expose whether it adds or cuts, its

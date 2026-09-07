@@ -16,19 +16,24 @@ void main() {
     Offset(0, 10),
   ], 10);
 
-  test('fromFace: orthonormal frame, normal matches face, origin = centroid', () {
+  test('fromFace: orthonormal frame, normal outward, origin = centroid', () {
     for (var f = 0; f < box.faces.length; f++) {
       final plane = SketchPlane.fromFace(box, f);
       final n = box.faceNormal(f);
+      final c = box.faceCentroid(f);
 
-      // u, v unit and orthogonal; normal = u x v matches the face normal.
+      // u, v unit and orthogonal; normal = u x v is parallel to the face normal.
       expect(plane.u.length, closeTo(1, 1e-9));
       expect(plane.v.length, closeTo(1, 1e-9));
       expect(dot(plane.u, plane.v), closeTo(0, 1e-9));
-      expect(dot(plane.normal, n), closeTo(1, 1e-6));
+      expect(dot(plane.normal, n).abs(), closeTo(1, 1e-6));
+
+      // ...and oriented OUTWARD (away from the solid centroid), so a boss on any
+      // face extrudes out of the body (not into it).
+      final outward = c - box.centroid;
+      expect(dot(plane.normal, outward), greaterThan(0));
 
       // Origin is the face centroid.
-      final c = box.faceCentroid(f);
       expect((plane.origin - c).length, closeTo(0, 1e-9));
     }
   });

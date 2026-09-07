@@ -41,6 +41,12 @@ All notable changes to CADSketch. Format follows
   body. Previously the containing part disappeared and only the new extrusion
   showed, because the view shows one body at a time; a face feature and its parent
   are now treated as one family and shown together.
+- Fixed: a face feature's controls show a single extrude-length slider (there was
+  a duplicate — the feature row's "Length" and a generic "Depth" both drove the
+  same value).
+- Fixed: a face sketch's plane normal is oriented outward on every face, so a
+  boss/pocket extrudes the intended way even on a cylinder's back faces (the raw
+  winding-dependent normal could point inward and reverse the extrude).
 - Clipped to its pane so zoomed geometry can't paint over the parts tabs.
 - Removed the explode/"scale" slider.
 

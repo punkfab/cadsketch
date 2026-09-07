@@ -33,7 +33,14 @@ class SketchPlane {
   /// you sketch directly on a body face (in-context / multi-plane).
   factory SketchPlane.fromFace(Solid solid, int f) {
     final origin = solid.faceCentroid(f);
-    final n = solid.faceNormal(f);
+    var n = solid.faceNormal(f);
+    // Orient the normal OUTWARD (away from the solid centroid). The raw Newell
+    // normal is winding-dependent and can point inward — e.g. a cylinder's
+    // tessellated back faces — which would make a boss extrude INTO the body.
+    // Flipping to outward makes a face sketch's +normal consistently "out of the
+    // body" on every face (same correction as MateConnector.normal).
+    final outward = origin - solid.centroid;
+    if (dot(n, outward) < 0) n = n * -1.0;
     // Pick a reference axis least parallel to n, project out n to get u.
     final ref = n.x.abs() < 0.9 ? const Vec3(1, 0, 0) : const Vec3(0, 1, 0);
     final u = (ref - n * dot(ref, n)).normalized;

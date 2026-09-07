@@ -794,7 +794,9 @@ class _SketchPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4 * iz;
 
-    // Decorative entities (non-line).
+    // Decorative entities (non-line). Labels are collected and drawn later, in
+    // screen space, so they stay a constant size.
+    final circleLabels = <(Offset, String)>[];
     final decs = controller.decorations;
     for (var di = 0; di < decs.length; di++) {
       final e = decs[di];
@@ -810,7 +812,7 @@ class _SketchPainter extends CustomPainter {
           final label = e.radiusParam != null
               ? '${e.radiusParam}=${radius.toStringAsFixed(0)}'
               : 'R${radius.toStringAsFixed(0)}';
-          _dimLabel(canvas, center + Offset(0, -radius), label, true);
+          circleLabels.add((center + Offset(0, -radius), label));
         case ArcEntity(
             :final center,
             :final radius,
@@ -861,11 +863,18 @@ class _SketchPainter extends CustomPainter {
       if (i == selectedPoint) canvas.drawCircle(p, 9 * iz, selectedRing);
       if (i == snapTarget) canvas.drawCircle(p, 11 * iz, snapRing);
     }
-    // Constraint glyphs.
+    // In-progress stroke (still in model space).
+    final a = active;
+    if (a != null && a.length >= 2) canvas.drawPath(_polyline(a), raw);
+
+    canvas.restore();
+
+    // --- Constant-size annotations, drawn in SCREEN space after the zoom
+    // transform is popped, so constraint glyphs and dimension labels keep the
+    // same size at any zoom (their positions are the projected model anchors).
     for (final c in m.constraints) {
       _drawConstraint(canvas, m, c);
     }
-    // Dimension labels: driving (accent, editable) vs driven (gray reference).
     for (var si = 0; si < m.segments.length; si++) {
       final seg = m.segments[si];
       final driving = seg.drivingLength;
@@ -876,41 +885,47 @@ class _SketchPainter extends CustomPainter {
           : isDriving
               ? value.toStringAsFixed(1)
               : '(${value.toStringAsFixed(0)})';
-      _dimLabel(canvas, m.dimAnchor(si), label, isDriving);
+      _dimLabel(canvas, _toScreen(m.dimAnchor(si)), label, isDriving);
     }
-
-    // In-progress stroke.
-    final a = active;
-    if (a != null && a.length >= 2) canvas.drawPath(_polyline(a), raw);
-
-    canvas.restore();
+    for (final (pos, label) in circleLabels) {
+      _dimLabel(canvas, _toScreen(pos), label, true);
+    }
   }
 
+  // Model coords -> screen (pane) coords, matching the canvas transform
+  // (translate(pan) then scale(zoom)) used for geometry.
+  Offset _toScreen(Offset m) =>
+      Offset(m.dx * zoom + pan.dx, m.dy * zoom + pan.dy);
+
+  // Anchors are computed in model space then projected to screen via _toScreen,
+  // because the badges are drawn after the zoom transform is popped (so they
+  // render at a constant size).
   void _drawConstraint(Canvas canvas, ParametricSketch m, SketchConstraint c) {
     switch (c.kind) {
       case ConstraintKind.horizontal:
-        _badgeText(canvas, _offsetMid(m, c.segments[0]), 'H');
+        _badgeText(canvas, _toScreen(_offsetMid(m, c.segments[0])), 'H');
       case ConstraintKind.vertical:
-        _badgeText(canvas, _offsetMid(m, c.segments[0]), 'V');
+        _badgeText(canvas, _toScreen(_offsetMid(m, c.segments[0])), 'V');
       case ConstraintKind.perpendicular:
         final at = (_offsetMid(m, c.segments[0]) +
                 _offsetMid(m, c.segments[1])) /
             2;
-        _badgePaint(canvas, at, _drawPerp);
+        _badgePaint(canvas, _toScreen(at), _drawPerp);
       case ConstraintKind.parallel:
         final at = (_offsetMid(m, c.segments[0]) +
                 _offsetMid(m, c.segments[1])) /
             2;
-        _badgePaint(canvas, at, _drawParallel);
+        _badgePaint(canvas, _toScreen(at), _drawParallel);
       case ConstraintKind.equalLength:
         // Place an "=" badge near each of the two segments so the pairing reads.
-        _badgePaint(canvas, _offsetMid(m, c.segments[0]), _drawEqual);
-        _badgePaint(canvas, _offsetMid(m, c.segments[1]), _drawEqual);
+        _badgePaint(canvas, _toScreen(_offsetMid(m, c.segments[0])), _drawEqual);
+        _badgePaint(canvas, _toScreen(_offsetMid(m, c.segments[1])), _drawEqual);
       case ConstraintKind.tangent:
         final line = m.segments[c.segments[0]];
         final arc = m.segments[c.segments[1]];
         final shared = (line.a == arc.a || line.a == arc.b) ? line.a : line.b;
-        _badgeText(canvas, m.points[shared] + const Offset(0, -16), 'T');
+        _badgeText(
+            canvas, _toScreen(m.points[shared]) + const Offset(0, -16), 'T');
     }
   }
 

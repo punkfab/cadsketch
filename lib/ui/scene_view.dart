@@ -552,6 +552,17 @@ _Scene _buildScene(List<Part> parts, {int? onlyIndex}) {
   for (var ai = 0; ai < parts.length; ai++) {
     if (onlyIndex != null && ai != onlyIndex) continue;
     final p = parts[ai];
+    // A part with drilled holes can't be region-decomposed into simple polygon
+    // solids (region loops don't carry holes), so render its holed solid
+    // directly — the wireframe then shows the holes, matching STL export.
+    if (p.hasHoles) {
+      final s = p.buildSolid();
+      if (s != null) {
+        index['$ai:0'] = items.length;
+        items.add(_Item(ai, 0, s, p.name, s.centroid));
+      }
+      continue;
+    }
     // Emboss: raise this part's surface marks (text / freehand) into 3D by
     // thickening each stroke into a ribbon and extruding it on the plane — the
     // same extrude primitive, so "extruded text" is just an extruded sketch.

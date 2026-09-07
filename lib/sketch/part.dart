@@ -106,14 +106,37 @@ class Part {
   /// flowing into this same field.
   Solid? importedSolid;
 
-  /// Builds the part's solid: an imported mesh if present, otherwise the
-  /// extruded closed profile (prism) or a circle (cylinder).
+  /// The part's outer profile plus interior holes (a sketched inner loop or a
+  /// circle decoration inside the outer boundary). The largest closed loop is
+  /// the outer. Null if there's no profile (empty, or circle-only handled by
+  /// [buildSolid]). Shared by [buildSolid] and STL export so the 3D view and the
+  /// exported mesh agree on holes.
+  ({List<Offset> outer, List<List<Offset>> holes})? profileWithHoles() {
+    final profiles = sketch.allProfiles()
+      ..sort((a, b) => _absArea(b).compareTo(_absArea(a)));
+    if (profiles.isEmpty || profiles.first.length < 3) return null;
+    final outer = profiles.first;
+    final holes = <List<Offset>>[
+      for (var i = 1; i < profiles.length; i++)
+        if (_pointInPoly(outer, _centroid(profiles[i]))) profiles[i],
+      for (final e in decorations)
+        if (e is CircleEntity && _pointInPoly(outer, e.center)) _tessellate(e),
+    ];
+    return (outer: outer, holes: holes);
+  }
+
+  /// True when the part has at least one interior hole.
+  bool get hasHoles => (profileWithHoles()?.holes.isNotEmpty) ?? false;
+
+  /// Builds the part's solid: an imported mesh if present, otherwise the extruded
+  /// profile (with any interior holes drilled through) or a circle (cylinder).
   Solid? buildSolid() {
     if (importedSolid != null) return importedSolid;
-    // Closed contour (lines and/or arcs, arcs tessellated).
-    final profile = sketch.closedProfile();
-    if (profile != null && profile.length >= 3) {
-      return extrudeProfile(profile, depth);
+    final pw = profileWithHoles();
+    if (pw != null) {
+      return pw.holes.isEmpty
+          ? extrudeProfile(pw.outer, depth)
+          : extrudeWithHolesSolid(pw.outer, pw.holes, depth);
     }
     final circle = _lastCircle();
     if (circle != null) {
@@ -190,6 +213,35 @@ class Part {
                       math.sin(2 * math.pi * i / _kCircleFacets)) *
                   c.radius,
       ];
+}
+
+double _absArea(List<Offset> p) {
+  var a = 0.0;
+  for (var i = 0, j = p.length - 1; i < p.length; j = i++) {
+    a += (p[j].dx - p[i].dx) * (p[j].dy + p[i].dy);
+  }
+  return a.abs() / 2;
+}
+
+Offset _centroid(List<Offset> p) {
+  var x = 0.0, y = 0.0;
+  for (final o in p) {
+    x += o.dx;
+    y += o.dy;
+  }
+  return Offset(x / p.length, y / p.length);
+}
+
+bool _pointInPoly(List<Offset> poly, Offset p) {
+  var inside = false;
+  for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    final a = poly[i], b = poly[j];
+    if ((a.dy > p.dy) != (b.dy > p.dy) &&
+        p.dx < (b.dx - a.dx) * (p.dy - a.dy) / (b.dy - a.dy) + a.dx) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 /// Deep copy of a decoration entity (mutable fields — stroke points, circle

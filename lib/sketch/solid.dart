@@ -110,3 +110,48 @@ Solid extrudeProfile(List<Offset> profile, double depth) {
   ];
   return Solid(verts, edges, faces);
 }
+
+/// Extrudes [outer] with interior [holes] drilled through, as a wireframe-model
+/// Solid: caps are the OUTER rings (faces 0/1) — the holes show through the
+/// inner-ring edges and their side walls, so the 3D wireframe reads as a holed
+/// part (matching STL export). Face 0 = bottom cap, 1 = top cap, then outer side
+/// quads, then each hole's side quads.
+Solid extrudeWithHolesSolid(
+    List<Offset> outer, List<List<Offset>> holes, double depth) {
+  final verts = <Vec3>[];
+  final edges = <List<int>>[];
+
+  int addRingVerts(List<Offset> loop) {
+    final base = verts.length;
+    for (final p in loop) {
+      verts.add(Vec3(p.dx, p.dy, 0));
+    }
+    for (final p in loop) {
+      verts.add(Vec3(p.dx, p.dy, depth));
+    }
+    return base;
+  }
+
+  final n = outer.length;
+  final ob = addRingVerts(outer);
+  final faces = <List<int>>[
+    [for (var i = 0; i < n; i++) ob + i], // 0: bottom cap (outer ring)
+    [for (var i = 0; i < n; i++) ob + n + i], // 1: top cap (outer ring)
+  ];
+
+  void ringEdgesAndWalls(int base, int m) {
+    for (var i = 0; i < m; i++) {
+      final j = (i + 1) % m;
+      edges.add([base + i, base + j]); // bottom ring
+      edges.add([base + m + i, base + m + j]); // top ring
+      edges.add([base + i, base + m + i]); // vertical
+      faces.add([base + i, base + j, base + m + j, base + m + i]); // side quad
+    }
+  }
+
+  ringEdgesAndWalls(ob, n);
+  for (final h in holes) {
+    ringEdgesAndWalls(addRingVerts(h), h.length);
+  }
+  return Solid(verts, edges, faces);
+}

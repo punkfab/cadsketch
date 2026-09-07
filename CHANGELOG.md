@@ -23,6 +23,8 @@ All notable changes to CADSketch. Format follows
   that misbehaved on extruded caps); click again to cycle to an occluded face.
 - Only renders once a part forms a solid — an open, non-closed sketch draws
   nothing in 3D.
+- Renders holed solids: a drilled circle or a sketched inner loop shows as a real
+  through-hole in the wireframe, matching STL export.
 - Clipped to its pane so zoomed geometry can't paint over the parts tabs.
 - Removed the explode/"scale" slider.
 

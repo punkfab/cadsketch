@@ -39,6 +39,8 @@ chains by ending one on the other's endpoint.
   keyboard, **Delete/Backspace** also removes the selection.
 - **Dimension a line:** tap its dimension number to set a length, bind it to a
   shared parameter, or make it a driven (reference) dimension.
+- **Undo / redo:** the ↶ / ↷ buttons in the top bar step through your sketch
+  edits (each part has its own history; a drag counts as one step).
 - **Constraints while dragging:** as you drag a vertex, edges snap to horizontal,
   vertical, or parallel/perpendicular to a nearby edge when they get close (a
   green glyph previews it); release to apply the constraint, which then holds the

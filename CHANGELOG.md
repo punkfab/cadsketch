@@ -7,6 +7,9 @@ All notable changes to CADSketch. Format follows
 ## [Unreleased]
 
 ### Sketching (2D)
+- Undo / redo (buttons in the app bar). Per-part sketch history covering strokes,
+  vertex drags, deletes, dimensions, constraints, circles, and mate points. A
+  drag is a single undo step (not one per pixel).
 - Constraint inference while dragging: as you drag a vertex, edges that come
   close to horizontal, vertical, or parallel/perpendicular to a nearby edge snap
   into alignment (previewed in green), and the constraint is applied on release —

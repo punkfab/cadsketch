@@ -266,6 +266,25 @@ class _SketchHomeState extends State<SketchHome> {
                 ),
               ),
             ),
+          // Undo / redo — enabled state tracks the active part's sketch history.
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Undo',
+                  icon: const Icon(Icons.undo),
+                  onPressed: _controller.canUndo ? _controller.undo : null,
+                ),
+                IconButton(
+                  tooltip: 'Redo',
+                  icon: const Icon(Icons.redo),
+                  onPressed: _controller.canRedo ? _controller.redo : null,
+                ),
+              ],
+            ),
+          ),
           IconButton(
             tooltip: 'Commands (⌘K / Ctrl+K)',
             icon: const Icon(Icons.bolt_outlined),

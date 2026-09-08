@@ -68,6 +68,15 @@ class MateConnector {
   }
 }
 
+/// An opaque deep-copy of a part's editable 2D content, used for undo/redo.
+/// Produced by [Part.captureState] and consumed by [Part.restoreState].
+class SketchState {
+  SketchState._(this._sketch, this._decorations, this._connectors);
+  final ParametricSketch _sketch;
+  final List<SketchEntity> _decorations;
+  final List<MateConnector> _connectors;
+}
+
 class Part {
   Part(this.name);
   final String name;
@@ -236,6 +245,37 @@ class Part {
     // points (copying them reads as phantom pins the user didn't place). Mates
     // are placed per-instance in the assembly anyway.
     return p;
+  }
+
+  /// A deep snapshot of this part's editable 2D content — sketch geometry,
+  /// decorations, and mate connectors — for undo/redo.
+  SketchState captureState() => SketchState._(
+        sketch.clone(),
+        [for (final e in decorations) _cloneEntity(e)],
+        [for (final c in connectors) MateConnector(c.faceIndex, anchor: c.anchor)],
+      );
+
+  /// Restores a snapshot from [captureState], installing fresh copies so the
+  /// snapshot stays pristine (a later redo restores the same state again).
+  void restoreState(SketchState s) {
+    final sk = s._sketch.clone();
+    sketch.points
+      ..clear()
+      ..addAll(sk.points);
+    sketch.segments
+      ..clear()
+      ..addAll(sk.segments);
+    sketch.constraints
+      ..clear()
+      ..addAll(sk.constraints);
+    decorations
+      ..clear()
+      ..addAll([for (final e in s._decorations) _cloneEntity(e)]);
+    connectors
+      ..clear()
+      ..addAll([
+        for (final c in s._connectors) MateConnector(c.faceIndex, anchor: c.anchor)
+      ]);
   }
 
   CircleEntity? _lastCircle() {

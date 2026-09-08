@@ -309,6 +309,9 @@ class _SketchCanvasState extends State<SketchCanvas> {
     final pi = widget.controller.model.hitTestPoint(m);
     if (pi != null) {
       _dragPoint = pi; // grab the vertex; don't start a stroke
+      // One coalesced undo step for the whole drag (cancelled on release if the
+      // vertex was only tapped, not moved).
+      widget.controller.beginSketchEdit();
       return;
     }
     setState(() => _active = [m]); // begin a freehand stroke (model coords)
@@ -367,6 +370,12 @@ class _SketchCanvasState extends State<SketchCanvas> {
       } else {
         // A press on a vertex (moved or not) leaves it selected.
         setState(() => _sel = _Selection(_SelKind.point, dp));
+      }
+      // Keep the coalesced undo step only if the drag actually changed something.
+      if (_dragMoved) {
+        widget.controller.endSketchEdit();
+      } else {
+        widget.controller.cancelSketchEdit();
       }
       return;
     }
@@ -713,6 +722,66 @@ class SketchController extends ChangeNotifier {
   ParametricSketch get model => active.sketch;
   List<SketchEntity> get decorations => active.decorations;
 
+  // --- Undo / redo (per-part sketch history) -------------------------------
+  // Each part keeps its own undo/redo stacks of sketch snapshots. A discrete
+  // edit records the pre-edit state; a drag records once at the start (via
+  // beginSketchEdit) and its many movePoint calls are coalesced into one step.
+  final Map<Part, ({List<SketchState> undo, List<SketchState> redo})> _history = {};
+  bool _recordingSuspended = false;
+  static const int _historyLimit = 100;
+
+  ({List<SketchState> undo, List<SketchState> redo}) _hist(Part p) =>
+      _history.putIfAbsent(p, () => (undo: [], redo: []));
+
+  /// Pushes the active part's current state onto its undo stack (clearing redo),
+  /// unless recording is suspended (mid-drag). Call BEFORE a mutation.
+  void _record() {
+    if (_recordingSuspended) return;
+    final h = _hist(active);
+    h.undo.add(active.captureState());
+    if (h.undo.length > _historyLimit) h.undo.removeAt(0);
+    h.redo.clear();
+  }
+
+  bool get canUndo => _history[active]?.undo.isNotEmpty ?? false;
+  bool get canRedo => _history[active]?.redo.isNotEmpty ?? false;
+
+  void undo() {
+    final h = _hist(active);
+    if (h.undo.isEmpty) return;
+    h.redo.add(active.captureState());
+    active.restoreState(h.undo.removeLast());
+    active.sketch.solve();
+    notifyListeners();
+  }
+
+  void redo() {
+    final h = _hist(active);
+    if (h.redo.isEmpty) return;
+    h.undo.add(active.captureState());
+    active.restoreState(h.redo.removeLast());
+    active.sketch.solve();
+    notifyListeners();
+  }
+
+  /// Begins a coalesced edit (a drag): records once, then suspends recording so
+  /// the drag's many movePoint / weld / constraint updates are one undo step.
+  void beginSketchEdit() {
+    _record();
+    _recordingSuspended = true;
+  }
+
+  /// Ends a coalesced edit begun with [beginSketchEdit].
+  void endSketchEdit() => _recordingSuspended = false;
+
+  /// Cancels a coalesced edit that changed nothing (e.g. a tap on a vertex that
+  /// didn't drag): drops the snapshot [beginSketchEdit] pushed.
+  void cancelSketchEdit() {
+    _recordingSuspended = false;
+    final h = _history[active];
+    if (h != null && h.undo.isNotEmpty) h.undo.removeLast();
+  }
+
   void addPart() {
     parts.add(Part('Part ${parts.length + 1}'));
     activeIndex = parts.length - 1;
@@ -778,6 +847,7 @@ class SketchController extends ChangeNotifier {
   }
 
   void addStroke(List<Offset> points) {
+    _record();
     final result = recognizeStroke(points);
     switch (result) {
       case PolylineResult(:final vertices):
@@ -791,6 +861,7 @@ class SketchController extends ChangeNotifier {
   }
 
   void setDrivingLength(int si, double? length) {
+    _record();
     model.segments[si].lengthParam = null; // a literal edit unbinds the param
     model.setDrivingLength(si, length);
     notifyListeners();
@@ -799,6 +870,7 @@ class SketchController extends ChangeNotifier {
   /// Binds the active part's segment [si] to a shared parameter [name],
   /// creating the parameter (seeded from the current length) if it's new.
   void bindDimension(int si, String name) {
+    _record();
     final value = parameters.putIfAbsent(name, () => model.measuredLength(si));
     model.segments[si].lengthParam = name;
     model.setDrivingLength(si, value);
@@ -827,6 +899,7 @@ class SketchController extends ChangeNotifier {
 
   /// Sets a circle's radius to a literal value (unbinding any parameter).
   void setCircleRadius(int decorationIndex, double radius) {
+    _record();
     final e = decorations[decorationIndex];
     if (e is CircleEntity) {
       e.radius = radius;
@@ -838,6 +911,7 @@ class SketchController extends ChangeNotifier {
   /// Binds a circle's radius to a shared parameter (created from the current
   /// radius if new).
   void bindCircleRadius(int decorationIndex, String name) {
+    _record();
     final e = decorations[decorationIndex];
     if (e is CircleEntity) {
       final value = parameters.putIfAbsent(name, () => e.radius);
@@ -919,16 +993,19 @@ class SketchController extends ChangeNotifier {
   }
 
   void deleteSegment(int si) {
+    _record();
     model.removeSegment(si);
     notifyListeners();
   }
 
   void deletePoint(int pi) {
+    _record();
     model.removePoint(pi);
     notifyListeners();
   }
 
   void deleteDecoration(int di) {
+    _record();
     if (di < 0 || di >= decorations.length) return;
     decorations.removeAt(di);
     notifyListeners();
@@ -1008,6 +1085,7 @@ class SketchController extends ChangeNotifier {
   /// "Text on a face" is therefore a sketch on that face, nothing special.
   /// Centered on the face outline (for a face sketch) or the existing geometry.
   void addText(String text, {double size = 28}) {
+    _record();
     final strokes = textToStrokes(text, size: size);
     if (strokes.isEmpty) return;
     final at = _datumCenter(active);
@@ -1035,6 +1113,7 @@ class SketchController extends ChangeNotifier {
   }
 
   void addConnector(int faceIndex) {
+    _record();
     // Anchor the connector to its face centroid so it survives face re-indexing
     // (e.g. when a hole is later drilled and buildSolid returns a longer face
     // list). resolvedFace() re-maps by nearest centroid on every use.
@@ -1121,6 +1200,7 @@ class SketchController extends ChangeNotifier {
   }
 
   void clear() {
+    _record();
     model.clear();
     decorations.clear();
     active.connectors.clear();

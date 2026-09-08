@@ -232,9 +232,9 @@ class Part {
     for (final e in decorations) {
       p.decorations.add(_cloneEntity(e));
     }
-    for (final c in connectors) {
-      p.connectors.add(MateConnector(c.faceIndex, anchor: c.anchor));
-    }
+    // Deliberately NOT copying mate connectors: a duplicate starts with no mate
+    // points (copying them reads as phantom pins the user didn't place). Mates
+    // are placed per-instance in the assembly anyway.
     return p;
   }
 

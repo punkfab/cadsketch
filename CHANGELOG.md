@@ -88,6 +88,11 @@ All notable changes to CADSketch. Format follows
   body is one assembly component, rendered with its bosses/pockets extruded
   in-context on their faces — a feature is no longer shown as a separate,
   mispositioned body parked off to the side. Mates connect base bodies.
+- Fixed: duplicating a part no longer carries the original's mate points — a
+  duplicate starts clean (they read as phantom pins the user didn't place).
+- Fixed: deleting a base body no longer makes its face features vanish from the
+  assembly. The features are promoted to base bodies (re-parented) instead of
+  being orphaned to a part that's no longer there.
 - Fixed: mate points stay on their face after a hole is drilled. A connector now
   anchors to its face centroid and re-resolves the face each frame, instead of
   storing a face index that shifts when the solid gains hole faces (which made

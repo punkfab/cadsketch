@@ -35,7 +35,8 @@ void main() {
     expect(b.sketch.points.length, 4);
     expect(b.sketch.segments.length, 4);
     expect(b.sketch.constraints.length, 1);
-    expect(b.connectors.length, 1);
+    expect(b.connectors, isEmpty,
+        reason: 'a clone starts with no mate points (no phantom pins)');
     expect((b.decorations.single as CircleEntity).radius, 3);
 
     // Mutating the copy must not touch the original.

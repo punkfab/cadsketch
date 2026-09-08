@@ -4,8 +4,8 @@ import 'package:ai_sketcher/sketch/plane.dart';
 import 'package:ai_sketcher/ui/sketch_canvas.dart';
 
 // Regression: creating a new part must NOT inherit the previous part's mate
-// points (connectors). Only Duplicate copies them, deliberately. The 3D view
-// draws the *active* part's own connectors, so a clean new part = no pins.
+// points (connectors) — not a new part, and not a duplicate. The 3D view draws
+// the *active* part's own connectors, so a clean part = no pins.
 
 void main() {
   test('Add part: the new part has no mate points', () {
@@ -30,16 +30,13 @@ void main() {
     expect(c.parts[0].connectors, hasLength(1));
   });
 
-  test('Duplicate DOES copy mate points (by design)', () {
+  test('Duplicate does NOT copy mate points (a clean copy, no phantom pins)', () {
     final c = SketchController();
     c.addConnector(3);
     c.duplicatePart(0);
     expect(c.active.name, endsWith('copy'));
-    expect(c.active.connectors, hasLength(1)); // copied on purpose
-    // ...but as an independent list, so removing one doesn't affect the original.
-    expect(identical(c.parts[0].connectors, c.parts[1].connectors), isFalse);
-    c.removeConnector(1, 0);
-    expect(c.parts[1].connectors, isEmpty);
+    expect(c.active.connectors, isEmpty, reason: 'the duplicate starts clean');
+    // The original is untouched.
     expect(c.parts[0].connectors, hasLength(1));
   });
 }

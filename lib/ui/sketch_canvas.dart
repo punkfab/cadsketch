@@ -946,7 +946,13 @@ class SketchController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    parts.removeAt(index);
+    final removed = parts.removeAt(index);
+    // Promote the removed body's features to base bodies (parent -> null) so they
+    // don't get orphaned — an orphaned feature roots at a part no longer in the
+    // list and vanishes from the assembly / part view.
+    for (final p in parts) {
+      if (identical(p.parent, removed)) p.parent = null;
+    }
     final kept = <Mate>[
       for (final m in mates)
         if (m.partA != index && m.partB != index)

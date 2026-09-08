@@ -1,8 +1,10 @@
-CADSketch needs no account or login and collects no data.
+CADSketch needs no account or sign-in and collects no data. Everything runs on-device and works offline. Universal — runs on iPhone and iPad. Finger drawing works; Apple Pencil is supported but not required.
 
-To try the core flow:
-1) On the canvas, draw a closed shape — a rough rectangle or circle is fine; it is cleaned up automatically.
-2) Switch to the 3D view to see the profile extruded into a solid.
-3) Tap a face, choose "Sketch on face," and draw a shape to add or cut material (toggle Union / Cut).
+Core flow to exercise (about a minute; no hardware or account needed):
+1) On the 2D canvas, draw a closed shape — a rough rectangle or circle is fine; strokes are cleaned into precise geometry automatically.
+2) The 3D pane shows the closed profile extruded into a solid. The cube/grid button (top-left of the 3D pane) toggles wireframe vs. shaded.
+3) Drag a corner of the sketch: nearby edges snap to horizontal / vertical / parallel and the alignment is applied as a constraint. Tap a constraint glyph (H, V, ∥) to delete it.
+4) In the 3D view, tap a face and choose "Sketch on face," then draw a shape to add material (Union) or cut into the part (Cut).
+5) The command palette — the lightning button, or Cmd-K with a keyboard — includes Export STL and Import DXF.
 
-Apple Pencil is supported but not required — finger drawing works. iPad only.
+On iPhone the parts panel starts collapsed to a thin rail (tap it to expand) so the canvas has room.

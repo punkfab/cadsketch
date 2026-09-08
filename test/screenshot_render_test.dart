@@ -9,7 +9,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:ai_sketcher/main.dart';
 import 'package:ai_sketcher/screenshot_seed.dart';
 
 // Local App Store screenshot renderer. Renders the REAL app UI (SketchHome) at
@@ -52,9 +51,14 @@ void main() {
 
     final dir = Directory(out)..createSync(recursive: true);
 
-    // iPad Pro 12.9": 2048x2732 physical = 1024x1366 logical at 2x.
-    tester.view.physicalSize = const Size(2048, 2732);
-    tester.view.devicePixelRatio = 2.0;
+    // Device: iPad Pro 12.9" (2048x2732 @2x) or iPhone 6.9" (1320x2868 @3x) —
+    // both accepted App Store sizes. Set SCREENSHOT_DEVICE=iphone for the latter.
+    final device = Platform.environment['SCREENSHOT_DEVICE'] ?? 'ipad';
+    final (Size physical, double dpr) = device == 'iphone'
+        ? (const Size(1320, 2868), 3.0)
+        : (const Size(2048, 2732), 2.0);
+    tester.view.physicalSize = physical;
+    tester.view.devicePixelRatio = dpr;
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
@@ -67,7 +71,8 @@ void main() {
         ? screenshotScenes.entries.where((e) => e.key == only)
         : screenshotScenes.entries;
 
-    for (final scene in scenes) {
+    for (final entry in scenes) {
+      final scene = entry.value;
       final key = GlobalKey();
       await tester.pumpWidget(
         RepaintBoundary(
@@ -77,7 +82,7 @@ void main() {
             theme: ThemeData.dark(useMaterial3: true).copyWith(
               textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'AppSans'),
             ),
-            home: SketchHome(controller: scene.value()),
+            home: scene.build(),
           ),
         ),
       );
@@ -86,14 +91,24 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
+      // Switch the 3D view to shaded for scenes that want a solid look.
+      if (scene.shaded) {
+        final toggle = find.byTooltip('Show shaded');
+        if (toggle.evaluate().isNotEmpty) {
+          await tester.tap(toggle.first);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 250));
+        }
+      }
+
       final boundary =
           key.currentContext!.findRenderObject() as RenderRepaintBoundary;
-      final image = await boundary.toImage(pixelRatio: 2.0);
+      final image = await boundary.toImage(pixelRatio: dpr);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      File('${dir.path}/${scene.key}.png')
+      File('${dir.path}/${entry.key}.png')
           .writeAsBytesSync(data!.buffer.asUint8List());
       // ignore: avoid_print
-      print('WROTE ${dir.path}/${scene.key}.png');
+      print('WROTE ${dir.path}/${entry.key}.png');
     }
   });
 }

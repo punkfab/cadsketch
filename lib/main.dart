@@ -311,8 +311,11 @@ class _SketchHomeState extends State<SketchHome> {
       body: Row(
         children: [
           // Parts/sketches tree (collapsible). Replaces the flat tab strip now
-          // that parts nest (base bodies -> face features).
-          PartTree(controller: _controller),
+          // that parts nest (base bodies -> face features). Starts collapsed to a
+          // rail on narrow (phone) screens so the panes aren't crowded.
+          PartTree(
+              controller: _controller,
+              startOpen: MediaQuery.of(context).size.width >= 700),
           const VerticalDivider(width: 1),
           // AI assistant sidebar disabled for now. To restore, add
           // `AiPanel(controller: _controller)` after SceneView (and uncomment the

@@ -56,6 +56,10 @@ All notable changes to CADSketch. Format follows
 - Removed the explode/"scale" slider.
 
 ### Parts & navigation
+- The parts tree starts collapsed to a thin rail on narrow (phone) screens so the
+  3D/2D panes aren't crowded; it stays expanded on tablets. The face-feature
+  control row also compacts on narrow screens (drops text labels) so it never
+  overflows.
 - Parts tree: a collapsible left panel replaces the flat tab strip. Base bodies
   are roots and face features nest under the body they were sketched on; each
   part expands to its Sketch (line/circle counts) and mate points. Tap a row to

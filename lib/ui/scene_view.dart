@@ -482,53 +482,60 @@ class _SceneViewState extends State<SceneView> {
     final accent = subtractive ? const Color(0xFFE57373) : const Color(0xFF81C784);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Row(children: [
-        const Icon(Icons.account_tree_outlined, size: 16, color: Colors.white54),
-        const SizedBox(width: 8),
-        SegmentedButton<FeatureOp>(
-          style: const ButtonStyle(
+      // Narrow (phone) widths drop the text labels — the segmented button colour
+      // and the direction arrow already convey add/cut — so the row never
+      // overflows.
+      child: LayoutBuilder(builder: (context, cons) {
+        final narrow = cons.maxWidth < 520;
+        return Row(children: [
+          const Icon(Icons.account_tree_outlined, size: 16, color: Colors.white54),
+          const SizedBox(width: 8),
+          SegmentedButton<FeatureOp>(
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            segments: const [
+              ButtonSegment(
+                  value: FeatureOp.union,
+                  icon: Icon(Icons.add, size: 15),
+                  label: Text('Union')),
+              ButtonSegment(
+                  value: FeatureOp.difference,
+                  icon: Icon(Icons.remove, size: 15),
+                  label: Text('Cut')),
+            ],
+            selected: {part.operation},
+            onSelectionChanged: (s) => c.setOperation(s.first),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            tooltip: part.flipDirection ? 'Un-flip direction' : 'Flip direction',
             visualDensity: VisualDensity.compact,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            icon: Icon(Icons.swap_vert,
+                size: 18, color: part.flipDirection ? accent : Colors.white54),
+            onPressed: c.toggleFlipDirection,
           ),
-          segments: const [
-            ButtonSegment(
-                value: FeatureOp.union,
-                icon: Icon(Icons.add, size: 15),
-                label: Text('Union')),
-            ButtonSegment(
-                value: FeatureOp.difference,
-                icon: Icon(Icons.remove, size: 15),
-                label: Text('Cut')),
-          ],
-          selected: {part.operation},
-          onSelectionChanged: (s) => c.setOperation(s.first),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          tooltip: part.flipDirection ? 'Un-flip direction' : 'Flip direction',
-          visualDensity: VisualDensity.compact,
-          icon: Icon(Icons.swap_vert,
-              size: 18, color: part.flipDirection ? accent : Colors.white54),
-          onPressed: c.toggleFlipDirection,
-        ),
-        // Live read-out: which way the extrude goes and how it reads.
-        Row(mainAxisSize: MainAxisSize.min, children: [
+          // Direction read-out: the arrow always shows; the words only when wide.
           Icon(subtractive ? Icons.south : Icons.north, size: 15, color: accent),
-          const SizedBox(width: 2),
-          Text(subtractive ? 'cuts in' : 'adds out',
-              style: TextStyle(color: accent, fontSize: 12)),
-        ]),
-        const SizedBox(width: 12),
-        const Text('Length', style: TextStyle(color: Colors.white54, fontSize: 12)),
-        Expanded(
-          child: Slider(
-            value: part.depth.clamp(5, 400),
-            min: 5,
-            max: 400,
-            onChanged: c.setDepth,
+          if (!narrow) ...[
+            const SizedBox(width: 2),
+            Text(subtractive ? 'cuts in' : 'adds out',
+                style: TextStyle(color: accent, fontSize: 12)),
+            const SizedBox(width: 12),
+            const Text('Length',
+                style: TextStyle(color: Colors.white54, fontSize: 12)),
+          ],
+          Expanded(
+            child: Slider(
+              value: part.depth.clamp(5, 400),
+              min: 5,
+              max: 400,
+              onChanged: c.setDepth,
+            ),
           ),
-        ),
-      ]),
+        ]);
+      }),
     );
   }
 }

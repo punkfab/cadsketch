@@ -10,16 +10,21 @@ import 'sketch_canvas.dart';
 /// tab strip now that parts have a parent/child hierarchy. Tap a row to make its
 /// part active; a per-part menu duplicates or deletes it.
 class PartTree extends StatefulWidget {
-  const PartTree({super.key, required this.controller});
+  const PartTree({super.key, required this.controller, this.startOpen = true});
 
   final SketchController controller;
+
+  /// Whether the panel starts expanded. Narrow screens (phones) pass false so
+  /// the tree opens as a thin rail and leaves room for the 3D/2D panes; the user
+  /// can still expand it. Wide screens (tablets) start open.
+  final bool startOpen;
 
   @override
   State<PartTree> createState() => _PartTreeState();
 }
 
 class _PartTreeState extends State<PartTree> {
-  bool _open = true;
+  late bool _open = widget.startOpen;
   // Parts whose children are hidden (default: expanded). Keyed by identity so it
   // survives reordering.
   final Set<Part> _collapsed = <Part>{};

@@ -1,7 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:ai_sketcher/main.dart';
 import 'package:ai_sketcher/screenshot_seed.dart';
 
 // App Store screenshot capture. Each scene from screenshot_seed pumps the REAL
@@ -19,12 +19,12 @@ void main() {
 
     // Pump one scene first so an engine surface exists, then convert it to an
     // image-backed layer once (required on iOS before takeScreenshot).
-    await tester.pumpWidget(AiSketcherApp(controller: scenes.first.value()));
+    await tester.pumpWidget(MaterialApp(home: scenes.first.value.build()));
     await tester.pumpAndSettle();
     await binding.convertFlutterSurfaceToImage();
 
     for (final scene in scenes) {
-      await tester.pumpWidget(AiSketcherApp(controller: scene.value()));
+      await tester.pumpWidget(MaterialApp(home: scene.value.build()));
       await tester.pumpAndSettle(const Duration(milliseconds: 400));
       await binding.takeScreenshot(scene.key);
     }

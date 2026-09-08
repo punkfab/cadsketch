@@ -26,7 +26,8 @@ class _AssemblyViewState extends State<AssemblyView> {
   double _yaw = 0.6;
   double _pitch = -0.5;
   double _zoom = 1; // scroll-wheel / pinch zoom (shrinks the fit radius)
-  bool _moved = false;
+  Offset _pan = Offset.zero; // screen-space camera pan (two-finger drag)
+  double _scaleStartZoom = 1;
   bool _shaded = false; // wireframe (default) vs flat-shaded solid
   Camera? _camera;
   ({int part, int connector})? _selected;
@@ -41,15 +42,26 @@ class _AssemblyViewState extends State<AssemblyView> {
 
   void _orbit(Offset d) {
     setState(() {
-      _moved = true;
       _yaw += d.dx * 0.01;
       _pitch = (_pitch + d.dy * 0.01).clamp(-math.pi / 2, math.pi / 2);
     });
   }
 
+  // One finger orbits; two fingers pinch-zoom AND pan.
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (d.pointerCount >= 2) {
+      setState(() {
+        _zoom = (_scaleStartZoom * d.scale).clamp(0.1, 40.0);
+        _pan += d.focalPointDelta;
+      });
+    } else {
+      _orbit(d.focalPointDelta);
+    }
+  }
+
   // Scroll up (negative delta) zooms in. Clamped so the model can't be lost.
   void _zoomBy(double dy) => setState(() {
-        _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.2, 12.0);
+        _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.1, 40.0);
       });
 
   void _tap(Offset p, List<_PartScene> scenes) {
@@ -125,21 +137,22 @@ class _AssemblyViewState extends State<AssemblyView> {
                         final cam = _fitCamera(Size(c.maxWidth, c.maxHeight), scenes);
                         _camera = cam;
                         return Listener(
-                          onPointerDown: (_) => _moved = false,
-                          onPointerMove: (e) => _orbit(e.delta),
-                          onPointerUp: (e) {
-                            if (!_moved) _tap(e.localPosition, scenes);
-                          },
                           onPointerSignal: (e) {
                             if (e is PointerScrollEvent) {
                               _zoomBy(e.scrollDelta.dy);
                             }
                           },
-                          child: Container(
-                            color: const Color(0xFF101418),
-                            child: CustomPaint(
-                              painter: _ScenePainter(scenes, cam, _selected, _shaded),
-                              size: Size.infinite,
+                          child: GestureDetector(
+                            onScaleStart: (_) => _scaleStartZoom = _zoom,
+                            onScaleUpdate: _onScaleUpdate,
+                            onTapUp: (e) => _tap(e.localPosition, scenes),
+                            child: Container(
+                              color: const Color(0xFF101418),
+                              child: CustomPaint(
+                                painter:
+                                    _ScenePainter(scenes, cam, _selected, _shaded),
+                                size: Size.infinite,
+                              ),
                             ),
                           ),
                         );
@@ -186,7 +199,12 @@ class _AssemblyViewState extends State<AssemblyView> {
       r = math.max(r, (v - c).length);
     }
     return Camera(
-        size: size, center: c, radius: r / _zoom, yaw: _yaw, pitch: _pitch);
+        size: size,
+        center: c,
+        radius: r / _zoom,
+        yaw: _yaw,
+        pitch: _pitch,
+        pan: _pan);
   }
 }
 

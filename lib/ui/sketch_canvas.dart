@@ -203,8 +203,8 @@ class _SketchCanvasState extends State<SketchCanvas> {
     return best;
   }
 
-  static const double _minZoom = 0.25;
-  static const double _maxZoom = 12.0;
+  static const double _minZoom = 0.05;
+  static const double _maxZoom = 200.0;
 
   // Captured each build so the pinch handler can do focal-point math.
   Offset _anchor = Offset.zero;

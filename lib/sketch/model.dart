@@ -417,41 +417,50 @@ class ParametricSketch {
     return loop == null ? null : _profileForLoop(loop);
   }
 
-  /// Every disjoint closed loop of the sketch (each vertex degree 2). Lets a
-  /// sketched inner loop be treated as a hole. Null if the graph isn't a clean
-  /// set of simple cycles.
-  List<List<int>>? allClosedLoops() {
-    if (points.isEmpty || segments.length != points.length) return null;
+  /// Every disjoint SIMPLE closed loop of the sketch — traversing only degree-2
+  /// vertices. Robust to messy sketches: open chains (degree-1 ends), orphan
+  /// points, and junctions (degree ≥ 3) are simply skipped, so an inner loop
+  /// that didn't close cleanly can't make the clean outer profile disappear.
+  /// Lets a sketched inner loop be treated as a hole. Never null (may be empty).
+  List<List<int>> allClosedLoops() {
+    if (points.isEmpty) return const [];
     final adj = List.generate(points.length, (_) => <int>[]);
     for (final s in segments) {
       adj[s.a].add(s.b);
       adj[s.b].add(s.a);
     }
-    if (adj.any((n) => n.length != 2)) return null;
 
     final visited = List.filled(points.length, false);
     final loops = <List<int>>[];
     for (var start = 0; start < points.length; start++) {
-      if (visited[start]) continue;
+      if (visited[start] || adj[start].length != 2) continue;
       final loop = <int>[];
       var prev = -1, cur = start;
+      var ok = true;
       do {
+        if (adj[cur].length != 2) {
+          ok = false; // ran into an open end or a junction — not a simple cycle
+          break;
+        }
         visited[cur] = true;
         loop.add(cur);
         final nbrs = adj[cur];
         final next = nbrs[0] != prev ? nbrs[0] : nbrs[1];
         prev = cur;
         cur = next;
-        if (loop.length > points.length) return null;
+        if (loop.length > points.length) {
+          ok = false;
+          break;
+        }
       } while (cur != start);
-      loops.add(loop);
+      if (ok && loop.length >= 3) loops.add(loop);
     }
     return loops;
   }
 
   /// Tessellated profiles for every closed loop (see [allClosedLoops]).
   List<List<Offset>> allProfiles() =>
-      [for (final loop in allClosedLoops() ?? const <List<int>>[]) _profileForLoop(loop)];
+      [for (final loop in allClosedLoops()) _profileForLoop(loop)];
 
   List<Offset> _profileForLoop(List<int> loop) {
     final profile = <Offset>[];

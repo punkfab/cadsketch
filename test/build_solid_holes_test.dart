@@ -40,4 +40,37 @@ void main() {
     expect(p.hasHoles, isTrue);
     expect(p.buildSolid()!.faces.length, 6 + 4);
   });
+
+  // Regression: an inner sketch that ISN'T a clean closed loop (e.g. a hole
+  // drawn freehand that didn't close) must NOT make the whole outer profile
+  // vanish. Loop extraction is robust — it keeps the closed loops it can find
+  // and ignores open chains.
+  test('an unclosed inner chain does not make the outer profile disappear', () {
+    final p = _plate(); // closed outer square (4 pts / 4 segs)
+    final s = p.sketch;
+    // An OPEN inner chain: 4-5-6, no closing edge back to 4.
+    s.points.addAll(const [Offset(10, 10), Offset(30, 10), Offset(30, 20)]);
+    s.segments
+      ..add(Segment(4, 5))
+      ..add(Segment(5, 6));
+    expect(p.buildSolid(), isNotNull, reason: 'the outer still extrudes');
+    expect(p.buildSolid()!.faces.length, 6, reason: 'outer box, no hole');
+    expect(p.hasHoles, isFalse);
+  });
+
+  test('outer + a second closed inner loop still drills a hole even with a '
+      'stray open chain present', () {
+    final p = _plate();
+    final s = p.sketch;
+    // A clean inner square (hole) ...
+    s.points.addAll(const [Offset(8, 8), Offset(20, 8), Offset(20, 18), Offset(8, 18)]);
+    for (var i = 0; i < 4; i++) {
+      s.segments.add(Segment(4 + i, 4 + (i + 1) % 4));
+    }
+    // ... plus a stray open chain that must be ignored.
+    s.points.addAll(const [Offset(30, 24), Offset(36, 26)]);
+    s.segments.add(Segment(8, 9));
+    expect(p.hasHoles, isTrue, reason: 'the closed inner loop is a hole');
+    expect(p.buildSolid()!.faces.length, 6 + 4);
+  });
 }

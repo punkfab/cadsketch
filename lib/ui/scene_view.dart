@@ -32,8 +32,12 @@ class _SceneViewState extends State<SceneView> {
   final double _explode = 0; // explode retired from the UI; kept at 0
   double _zoom = 1; // scroll-wheel zoom (shrinks the camera radius)
   bool _shaded = false; // wireframe (default) vs flat-shaded solid rendering
-  int? _selItem; // selected scene item (flattened index)
+  int? _selItem; // selected scene item (flattened index, for highlight only)
   int? _selFace; // selected face on that item (for "sketch on face")
+  // Captured at tap time so the action survives the scene rebuild that setActive
+  // triggers (an item INDEX can go stale; the solid + authored part don't).
+  Solid? _selSolid;
+  int? _selAuthored;
   int? _hovItem; // face under the cursor (hover preview of what a tap selects)
   int? _hovFace;
   Offset? _lastTapPt; // last tap location, to detect same-spot re-clicks
@@ -51,16 +55,21 @@ class _SceneViewState extends State<SceneView> {
   ];
 
   double _scaleStartZoom = 1; // _zoom captured at pinch start
+  Offset _pan = Offset.zero; // screen-space camera pan (two-finger drag)
 
   void _orbit(Offset d) => setState(() {
         _yaw += d.dx * 0.01;
         _pitch = (_pitch + d.dy * 0.01).clamp(-1.5, 1.5);
       });
 
-  // Scale gesture: one finger orbits (focalPointDelta), two fingers pinch-dolly.
+  // Scale gesture: one finger orbits; two fingers pinch-zoom AND pan (a two-finger
+  // drag translates, the pinch scale zooms — both at once feel natural).
   void _onScaleUpdate(ScaleUpdateDetails d) {
     if (d.pointerCount >= 2) {
-      setState(() => _zoom = (_scaleStartZoom * d.scale).clamp(0.2, 12.0));
+      setState(() {
+        _zoom = (_scaleStartZoom * d.scale).clamp(0.1, 40.0);
+        _pan += d.focalPointDelta;
+      });
     } else {
       _orbit(d.focalPointDelta);
     }
@@ -72,6 +81,7 @@ class _SceneViewState extends State<SceneView> {
         radius: (scene.radius * (1 + _explode * 1.4) + 1) / _zoom,
         yaw: _yaw,
         pitch: _pitch,
+        pan: _pan,
       );
 
   // Scroll up (negative delta) zooms in. Clamped so you can't lose the model.
@@ -169,6 +179,10 @@ class _SceneViewState extends State<SceneView> {
     setState(() {
       _selItem = h?.item;
       _selFace = h?.face;
+      // Capture the actual solid + authored part NOW (the scene is valid here);
+      // setActive below rebuilds it, which would invalidate a stored index.
+      _selSolid = h == null ? null : scene.items[h.item].solid;
+      _selAuthored = h == null ? null : scene.items[h.item].authored;
     });
     if (h != null) widget.controller.setActive(scene.items[h.item].authored);
   }
@@ -193,20 +207,24 @@ class _SceneViewState extends State<SceneView> {
   }
 
   void _sketchOnSelectedFace(_Scene scene) {
-    final i = _selItem, f = _selFace;
-    if (i == null || f == null) return;
-    final solid = scene.items[i].solid;
+    final solid = _selSolid, f = _selFace, authored = _selAuthored;
+    if (solid == null || f == null || authored == null) return;
+    if (f < 0 || f >= solid.faces.length) return;
     final plane = SketchPlane.fromFace(solid, f);
     // Project the picked face's outline into the new plane's 2D coords so the
     // canvas can show it as a guide and anchor the sketch onto the face.
     final reference = [for (final vi in solid.faces[f]) plane.to2d(solid.vertices[vi])];
     // Remember the body this feature sits on, so the 3D view keeps showing it.
-    final parent = widget.controller.parts[scene.items[i].authored];
+    final parent = authored < widget.controller.parts.length
+        ? widget.controller.parts[authored]
+        : null;
     widget.controller.addPlaneSketch(plane,
         name: 'Face sketch', reference: reference, parent: parent);
     setState(() {
       _selItem = null;
       _selFace = null;
+      _selSolid = null;
+      _selAuthored = null;
     });
   }
 
@@ -214,15 +232,16 @@ class _SceneViewState extends State<SceneView> {
   // origin is the face centroid and its normal the face normal. Fasten two mate
   // points on different parts in the Assembly view to bring the faces flush.
   void _addMatePoint(_Scene scene) {
-    final i = _selItem, f = _selFace;
-    if (i == null || f == null) return;
+    final solid = _selSolid, f = _selFace;
+    if (solid == null || f == null || f < 0 || f >= solid.faces.length) return;
     // The face was picked on the scene ITEM's solid (a decomposition region for
     // a multi-region part), but a connector is interpreted against the part's
     // OWN solid. Map the picked face to the nearest face on that solid so the
-    // mate point lands on the right face regardless of decomposition.
+    // mate point lands on the right face regardless of decomposition. (Uses the
+    // solid captured at tap time, so it's valid after the scene rebuilt.)
     final partSolid = widget.controller.active.buildSolid();
     if (partSolid == null) return;
-    final pickedCentroid = scene.items[i].solid.faceCentroid(f);
+    final pickedCentroid = solid.faceCentroid(f);
     widget.controller.addConnector(partSolid.faceNearest(pickedCentroid));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

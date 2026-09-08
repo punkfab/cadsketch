@@ -7,6 +7,10 @@ All notable changes to CADSketch. Format follows
 ## [Unreleased]
 
 ### Sketching (2D)
+- Zoom in much further on the 2D canvas (raised the max-zoom cap).
+- Fixed: an inner loop that isn't a clean closed loop (e.g. a hole drawn freehand
+  that didn't close) no longer makes the whole outer profile disappear — loop
+  extraction now keeps the closed loops it can find and ignores open chains.
 - Undo / redo (buttons in the app bar). Per-part sketch history covering strokes,
   vertex drags, deletes, dimensions, constraints, circles, and mate points. A
   drag is a single undo step (not one per pixel).
@@ -55,6 +59,11 @@ All notable changes to CADSketch. Format follows
 - Fixed: a face sketch's plane normal is oriented outward on every face, so a
   boss/pocket extrudes the intended way even on a cylinder's back faces (the raw
   winding-dependent normal could point inward and reverse the extrude).
+- Two-finger pan in both 3D views (the part view and the Assembly view): one
+  finger orbits, two fingers pinch-zoom and pan together.
+- Fixed: "Sketch on face" (and "Add mate point") no longer intermittently act on
+  the wrong face after tapping — the picked face is captured at tap time, so it
+  survives the view rebuild that selecting a part triggers.
 - Wireframe / shaded toggle: switch either 3D view (the part view and the
   Assembly view) between the wireframe and a simple flat-shaded solid. Shading is
   per-face (ambient + diffuse by facing angle), with faces drawn back-to-front so

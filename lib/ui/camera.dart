@@ -14,7 +14,8 @@ class Camera {
     required double radius,
     required this.yaw,
     required this.pitch,
-  })  : origin = Offset(size.width / 2, size.height / 2),
+    Offset pan = Offset.zero,
+  })  : origin = Offset(size.width / 2, size.height / 2) + pan,
         scale = math.min(size.width, size.height) * 0.38 / math.max(radius, 1e-6);
 
   final Vec3 center;

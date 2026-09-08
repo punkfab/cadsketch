@@ -7,6 +7,14 @@ All notable changes to CADSketch. Format follows
 ## [Unreleased]
 
 ### Sketching (2D)
+- Fixed: a small circle now recognizes as a circle (this is why "sketch a circle
+  on the thin rectangular side face of a cylinder" failed while the round cap
+  worked). On a cap you draw a big circle; on a thin side face you draw a small
+  one, and the corner-vs-curve step used an absolute RDP epsilon floor (~1.5
+  model units) that, on a small circle, was a large fraction of the radius —
+  RDP collapsed the circle to a coarse polygon whose turns read as corners, so
+  it became a polyline and no circle persisted. The corner epsilon is now
+  size-relative, so a clean circle reads as a circle at any size.
 - Fixed: drawing while zoomed in now works (this is why sketching on a small face
   "sometimes did nothing"). Stroke recognition and vertex-merge thresholds are now
   screen-relative — before, a normal on-screen stroke drawn zoomed in was only a

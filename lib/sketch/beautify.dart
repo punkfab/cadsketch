@@ -86,10 +86,20 @@ StrokeResult recognizeStroke(List<Offset> points, {double scale = 1}) {
     return DecorationResult(RawStroke(points));
   }
 
-  final eps = math.max(minRdp, kRelativeRdpEpsilon * _diagonal(points));
+  final diag = _diagonal(points);
+  final eps = math.max(minRdp, kRelativeRdpEpsilon * diag);
+  // The curve-vs-corner decision uses a PURELY size-relative epsilon. The
+  // absolute floor [minRdp] is ~1.5 model units, which on a physically small
+  // circle (e.g. one drawn on a cylinder's thin side face) is a large fraction
+  // of the radius — RDP then collapses the circle to a coarse polygon whose
+  // turns exceed [kCornerThreshold], so it misreads as a polyline and no circle
+  // persists. A relative epsilon keeps a circle's vertices at ANY size, so the
+  // max-turn test stays valid. (The floor still guards the polyline-vertex
+  // output below, where snapping noisy vertices is what's wanted.)
+  final cornerEps = math.max(kRelativeRdpEpsilon * diag, 1e-3);
   // Smoothed simplification drives the curve-vs-corner decision (noise-robust);
   // the raw simplification supplies sharper vertices for the polyline output.
-  final smoothVerts = _rdp(_smooth(points), eps);
+  final smoothVerts = _rdp(_smooth(points), cornerEps);
 
   if (_maxTurn(smoothVerts) < kCornerThreshold && points.length >= 3) {
     final c = SketchKernel.instance.fitCircle(points);

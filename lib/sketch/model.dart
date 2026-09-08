@@ -597,6 +597,150 @@ class ParametricSketch {
     solve(drag: pi);
   }
 
+  /// Removes constraint [i] and re-solves (so the geometry relaxes without it).
+  void removeConstraint(int i) {
+    if (i < 0 || i >= constraints.length) return;
+    constraints.removeAt(i);
+    solve();
+  }
+
+  /// True if a constraint of [kind] over segment set [segs] already exists.
+  /// Two-segment relations (parallel/perp/equal) are compared unordered.
+  bool hasConstraint(ConstraintKind kind, List<int> segs) {
+    for (final c in constraints) {
+      if (c.kind != kind) continue;
+      if (segs.length == 1) {
+        if (c.segments.isNotEmpty && c.segments[0] == segs[0]) return true;
+      } else if (c.segments.length == segs.length &&
+          c.segments.toSet().containsAll(segs)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// While dragging point [pi] toward [raw], snap it so the edges touching it
+  /// line up with an axis (horizontal / vertical) or become parallel /
+  /// perpendicular to a nearby edge, when they're within [snapAngle] of that
+  /// alignment. Returns the snapped target and the NEW constraint candidates
+  /// that hold there (existing constraints are not repeated). The caller moves
+  /// the point to [target] live and applies [candidates] on release — so the
+  /// alignment then persists until deleted. Snap-and-apply inference.
+  ({Offset target, List<SketchConstraint> candidates}) snapDrag(int pi, Offset raw,
+      {double snapAngle = 0.12}) {
+    final incident = <int>[]; // segments touching pi (straight lines only)
+    for (var si = 0; si < segments.length; si++) {
+      final s = segments[si];
+      if (s.isArc) continue;
+      if (s.a == pi || s.b == pi) incident.add(si);
+    }
+    if (incident.isEmpty) return (target: raw, candidates: const []);
+
+    var target = raw;
+    final candidates = <SketchConstraint>[];
+
+    // Pass 1: axis snaps. These compose cleanly — one fixes y (horizontal), one
+    // fixes x (vertical) — so a corner can lock both its edges to axes at once.
+    double? bestH, snapY;
+    int? hSeg;
+    double? bestV, snapX;
+    int? vSeg;
+    for (final si in incident) {
+      final other = points[_otherEnd(si, pi)];
+      final d = raw - other;
+      if (d.distance < 1e-6) continue;
+      final aH = _angleFrom(d, 0); // distance to horizontal
+      final aV = _angleFrom(d, math.pi / 2); // distance to vertical
+      if (aH < snapAngle && (bestH == null || aH < bestH)) {
+        bestH = aH;
+        snapY = other.dy;
+        hSeg = si;
+      }
+      if (aV < snapAngle && (bestV == null || aV < bestV)) {
+        bestV = aV;
+        snapX = other.dx;
+        vSeg = si;
+      }
+    }
+    if (snapY != null) {
+      target = Offset(target.dx, snapY);
+      if (!hasConstraint(ConstraintKind.horizontal, [hSeg!])) {
+        candidates.add(SketchConstraint(ConstraintKind.horizontal, [hSeg]));
+      }
+    }
+    if (snapX != null) {
+      target = Offset(snapX, target.dy);
+      if (!hasConstraint(ConstraintKind.vertical, [vSeg!])) {
+        candidates.add(SketchConstraint(ConstraintKind.vertical, [vSeg]));
+      }
+    }
+
+    // Pass 2: parallel / perpendicular to another edge — only when no axis snap
+    // applied (a rotation would fight the axis x/y snaps), and only for the
+    // longest incident edge, rotating it about its far end onto the alignment.
+    if (candidates.isEmpty) {
+      final si = incident.reduce((a, b) =>
+          (raw - points[_otherEnd(a, pi)]).distance >
+                  (raw - points[_otherEnd(b, pi)]).distance
+              ? a
+              : b);
+      final other = points[_otherEnd(si, pi)];
+      final d = raw - other;
+      final len = d.distance;
+      if (len >= 1e-6) {
+        SketchConstraint? best;
+        Offset? bestTarget;
+        double bestErr = snapAngle;
+        for (var tj = 0; tj < segments.length; tj++) {
+          if (tj == si || segments[tj].isArc) continue;
+          final t = segments[tj];
+          final td = points[t.b] - points[t.a];
+          if (td.distance < 1e-6) continue;
+          final unit = td / td.distance;
+          final acute = _acute(d, td);
+          if (acute < bestErr) {
+            final sign = (d.dx * unit.dx + d.dy * unit.dy) >= 0 ? 1.0 : -1.0;
+            bestErr = acute;
+            bestTarget = other + unit * (sign * len);
+            best = SketchConstraint(ConstraintKind.parallel, [si, tj]);
+          }
+          final perp = (acute - math.pi / 2).abs();
+          if (perp < bestErr) {
+            final pu = Offset(-unit.dy, unit.dx);
+            final sign = (d.dx * pu.dx + d.dy * pu.dy) >= 0 ? 1.0 : -1.0;
+            bestErr = perp;
+            bestTarget = other + pu * (sign * len);
+            best = SketchConstraint(ConstraintKind.perpendicular, [si, tj]);
+          }
+        }
+        if (best != null && bestTarget != null) {
+          target = bestTarget;
+          if (!hasConstraint(best.kind, best.segments)) candidates.add(best);
+        }
+      }
+    }
+
+    return (target: target, candidates: candidates);
+  }
+
+  int _otherEnd(int si, int pi) => segments[si].a == pi ? segments[si].b : segments[si].a;
+
+  /// Smallest angle between direction [d] and the axis at [axis] radians (or its
+  /// opposite), in [0, pi/2].
+  double _angleFrom(Offset d, double axis) {
+    var a = (math.atan2(d.dy, d.dx) - axis).abs() % math.pi;
+    if (a > math.pi / 2) a = math.pi - a;
+    return a;
+  }
+
+  /// Acute angle between two direction vectors, in [0, pi/2].
+  double _acute(Offset a, Offset b) {
+    final aa = math.atan2(a.dy, a.dx), bb = math.atan2(b.dy, b.dx);
+    var d = (aa - bb).abs() % math.pi;
+    if (d > math.pi / 2) d = math.pi - d;
+    return d;
+  }
+
   /// Removes segment [si] (and its arc), dropping constraints that reference it
   /// and any now-unused points, then re-solves.
   void removeSegment(int si) {

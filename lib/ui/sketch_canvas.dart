@@ -50,7 +50,7 @@ class SketchCanvas extends StatefulWidget {
 }
 
 /// What the user currently has selected, for delete / edit affordances.
-enum _SelKind { point, segment, circle }
+enum _SelKind { point, segment, circle, constraint }
 
 class _Selection {
   const _Selection(this.kind, this.index);
@@ -70,6 +70,9 @@ class _SketchCanvasState extends State<SketchCanvas> {
   Offset? _downPos;
   bool _dragMoved = false;
   int? _snapTarget; // vertex the dragged point would weld onto on release
+  // Constraints inferred while dragging (H/V/parallel/perp); previewed in green
+  // and applied on release so the alignment persists.
+  List<SketchConstraint> _dragCandidates = const [];
 
   /// Drag a vertex within this (model units) of another to weld them on release.
   static const double _snapRadius = 16.0;
@@ -160,6 +163,44 @@ class _SketchCanvasState extends State<SketchCanvas> {
   void _onHover(Offset screen) {
     final h = _hitDimensionScreen(screen);
     if (h != _hoveredDim) setState(() => _hoveredDim = h);
+  }
+
+  /// The constraint whose glyph badge is under [screen] (screen space, since
+  /// badges are a constant on-screen size). Anchors mirror the painter's.
+  int? _hitConstraintScreen(Offset screen) {
+    final m = widget.controller.model;
+    Offset off(int si) => m.segMid(si) + m.segNormal(si) * 16;
+    int? best;
+    var bestD = 20.0;
+    for (var i = 0; i < m.constraints.length; i++) {
+      final c = m.constraints[i];
+      final anchors = <Offset>[];
+      switch (c.kind) {
+        case ConstraintKind.horizontal:
+        case ConstraintKind.vertical:
+          anchors.add(off(c.segments[0]));
+        case ConstraintKind.perpendicular:
+        case ConstraintKind.parallel:
+          anchors.add((off(c.segments[0]) + off(c.segments[1])) / 2);
+        case ConstraintKind.equalLength:
+          anchors
+            ..add(off(c.segments[0]))
+            ..add(off(c.segments[1]));
+        case ConstraintKind.tangent:
+          final line = m.segments[c.segments[0]];
+          final arc = m.segments[c.segments[1]];
+          final shared = (line.a == arc.a || line.a == arc.b) ? line.a : line.b;
+          anchors.add(m.points[shared] + const Offset(0, -16));
+      }
+      for (final a in anchors) {
+        final d = (_toScreenPt(a) - screen).distance;
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+    }
+    return best;
   }
 
   static const double _minZoom = 0.25;
@@ -285,12 +326,17 @@ class _SketchCanvasState extends State<SketchCanvas> {
       }
       _dragMoved = true;
       final model = widget.controller.model;
-      widget.controller.movePoint(_dragPoint!, _toModel(screen)); // live re-solve
+      // Infer + snap: align incident edges to axes / a nearby edge as you drag.
+      final snap = widget.controller.snapDrag(_dragPoint!, _toModel(screen));
+      widget.controller.movePoint(_dragPoint!, snap.target); // live re-solve
       // Preview the weld target: another vertex within snap range of where the
       // dragged point now sits. Highlighted so "release to close" is legible.
       final target = model.hitTestPoint(model.points[_dragPoint!],
           exclude: _dragPoint, radius: _snapRadius);
-      if (target != _snapTarget) setState(() => _snapTarget = target);
+      setState(() {
+        _dragCandidates = snap.candidates;
+        _snapTarget = target;
+      });
       return;
     }
     setState(() => _active?.add(_toModel(screen)));
@@ -305,8 +351,15 @@ class _SketchCanvasState extends State<SketchCanvas> {
     final dp = _dragPoint;
     if (dp != null) {
       _dragPoint = null;
+      final cands = _dragCandidates;
+      _dragCandidates = const [];
       final target = _snapTarget;
       _snapTarget = null;
+      // Apply inferred constraints first (they reference the current segment
+      // indices), before any weld reindexes them.
+      if (_dragMoved && cands.isNotEmpty) {
+        widget.controller.applyConstraints(cands);
+      }
       if (target != null && target != dp && _dragMoved) {
         // Dropped on another vertex → weld them (closes the path).
         final kept = widget.controller.mergePoints(dp, target);
@@ -345,6 +398,12 @@ class _SketchCanvasState extends State<SketchCanvas> {
     final di = _hitDimensionScreen(_toScreenPt(p));
     if (di != null) {
       _editDimension(di);
+      return;
+    }
+    // A tap on a constraint glyph selects it (so it can be deleted).
+    final ki = _hitConstraintScreen(_toScreenPt(p));
+    if (ki != null) {
+      setState(() => _sel = _Selection(_SelKind.constraint, ki));
       return;
     }
     // Otherwise a tap anywhere on an edge / circle selects it (vertices are
@@ -386,8 +445,24 @@ class _SketchCanvasState extends State<SketchCanvas> {
         widget.controller.deleteSegment(sel.index);
       case _SelKind.circle:
         widget.controller.deleteDecoration(sel.index);
+      case _SelKind.constraint:
+        widget.controller.removeConstraint(sel.index);
     }
     setState(() => _sel = null);
+  }
+
+  /// Human name for the constraint currently selected (for the selection bar).
+  String _constraintName(int i) {
+    final cs = widget.controller.model.constraints;
+    if (i < 0 || i >= cs.length) return 'Constraint';
+    return switch (cs[i].kind) {
+      ConstraintKind.horizontal => 'Horizontal',
+      ConstraintKind.vertical => 'Vertical',
+      ConstraintKind.parallel => 'Parallel',
+      ConstraintKind.perpendicular => 'Perpendicular',
+      ConstraintKind.equalLength => 'Equal length',
+      ConstraintKind.tangent => 'Tangent',
+    };
   }
 
   /// Decoration index of a circle whose outline is near [p], or null.
@@ -488,6 +563,8 @@ class _SketchCanvasState extends State<SketchCanvas> {
               final circHi = _selectedCircle ??
                   (sel?.kind == _SelKind.circle ? sel!.index : null);
               final ptHi = sel?.kind == _SelKind.point ? sel!.index : null;
+              final conHi =
+                  sel?.kind == _SelKind.constraint ? sel!.index : null;
               final viewMoved =
                   (_zoom - 1).abs() > 1e-3 || _userPan != Offset.zero;
               return Stack(
@@ -511,7 +588,8 @@ class _SketchCanvasState extends State<SketchCanvas> {
                       child: CustomPaint(
                         painter: _SketchPainter(widget.controller, _active,
                             segHi, circHi, ptHi, _pan, _zoom, reference,
-                            _snapTarget, _hoveredDim, _chainStart, _linePreview),
+                            _snapTarget, _hoveredDim, _chainStart, _linePreview,
+                            conHi, _dragCandidates),
                         size: Size.infinite,
                       ),
                     ),
@@ -581,6 +659,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
       _SelKind.point => 'Point',
       _SelKind.segment => 'Line',
       _SelKind.circle => 'Circle',
+      _SelKind.constraint => _constraintName(sel.index),
     };
     return Positioned(
       right: 8,
@@ -799,6 +878,35 @@ class SketchController extends ChangeNotifier {
   /// Drags the active part's vertex [pi] to [to] (live constraint re-solve).
   void movePoint(int pi, Offset to) {
     model.dragPoint(pi, to);
+    notifyListeners();
+  }
+
+  /// Snap target + inferred constraint candidates while dragging vertex [pi]
+  /// toward [raw] (horizontal / vertical / parallel / perpendicular). The canvas
+  /// moves the point to the snapped target live and applies the candidates on
+  /// release via [applyConstraints].
+  ({Offset target, List<SketchConstraint> candidates}) snapDrag(int pi, Offset raw) =>
+      model.snapDrag(pi, raw);
+
+  /// Adds inferred constraints (deduped) and re-solves — makes a snapped
+  /// alignment persist after a drag.
+  void applyConstraints(List<SketchConstraint> cs) {
+    var added = false;
+    for (final c in cs) {
+      if (!model.hasConstraint(c.kind, c.segments)) {
+        model.constraints.add(c);
+        added = true;
+      }
+    }
+    if (added) {
+      model.solve();
+      notifyListeners();
+    }
+  }
+
+  /// Deletes a constraint by index (the sketch then relaxes without it).
+  void removeConstraint(int i) {
+    model.removeConstraint(i);
     notifyListeners();
   }
 
@@ -1055,7 +1163,8 @@ double _weldFor(List<(Offset, Offset)> lines) {
 class _SketchPainter extends CustomPainter {
   _SketchPainter(this.controller, this.active, this.selected,
       this.selectedCircle, this.selectedPoint, this.pan, this.zoom, this.reference,
-      this.snapTarget, this.hoveredDim, this.chainStart, this.linePreview);
+      this.snapTarget, this.hoveredDim, this.chainStart, this.linePreview,
+      this.selectedConstraint, this.dragCandidates);
 
   final SketchController controller;
   final List<Offset>? active;
@@ -1069,6 +1178,8 @@ class _SketchPainter extends CustomPainter {
   final int? hoveredDim; // segment whose dimension label is hovered
   final Offset? chainStart; // line tool: last placed vertex (model coords)
   final Offset? linePreview; // line tool: current rubber-band target (model)
+  final int? selectedConstraint; // constraint index highlighted for delete
+  final List<SketchConstraint> dragCandidates; // inferred constraints preview
 
   static const _glyphColor = Color(0xFFFFC857);
 
@@ -1225,8 +1336,13 @@ class _SketchPainter extends CustomPainter {
     // --- Constant-size annotations, drawn in SCREEN space after the zoom
     // transform is popped, so constraint glyphs and dimension labels keep the
     // same size at any zoom (their positions are the projected model anchors).
-    for (final c in m.constraints) {
-      _drawConstraint(canvas, m, c);
+    for (var i = 0; i < m.constraints.length; i++) {
+      _drawConstraint(canvas, m, m.constraints[i],
+          color: i == selectedConstraint ? Colors.white : _glyphColor);
+    }
+    // Live preview of the constraints a drag would apply on release (green).
+    for (final c in dragCandidates) {
+      _drawConstraint(canvas, m, c, color: const Color(0xFF69F0AE));
     }
     for (var si = 0; si < m.segments.length; si++) {
       final seg = m.segments[si];
@@ -1267,32 +1383,33 @@ class _SketchPainter extends CustomPainter {
   // Anchors are computed in model space then projected to screen via _toScreen,
   // because the badges are drawn after the zoom transform is popped (so they
   // render at a constant size).
-  void _drawConstraint(Canvas canvas, ParametricSketch m, SketchConstraint c) {
+  void _drawConstraint(Canvas canvas, ParametricSketch m, SketchConstraint c,
+      {Color color = _glyphColor}) {
     switch (c.kind) {
       case ConstraintKind.horizontal:
-        _badgeText(canvas, _toScreen(_offsetMid(m, c.segments[0])), 'H');
+        _badgeText(canvas, _toScreen(_offsetMid(m, c.segments[0])), 'H', color);
       case ConstraintKind.vertical:
-        _badgeText(canvas, _toScreen(_offsetMid(m, c.segments[0])), 'V');
+        _badgeText(canvas, _toScreen(_offsetMid(m, c.segments[0])), 'V', color);
       case ConstraintKind.perpendicular:
-        final at = (_offsetMid(m, c.segments[0]) +
-                _offsetMid(m, c.segments[1])) /
-            2;
-        _badgePaint(canvas, _toScreen(at), _drawPerp);
+        final at =
+            (_offsetMid(m, c.segments[0]) + _offsetMid(m, c.segments[1])) / 2;
+        _badgePaint(canvas, _toScreen(at), color, _drawPerp);
       case ConstraintKind.parallel:
-        final at = (_offsetMid(m, c.segments[0]) +
-                _offsetMid(m, c.segments[1])) /
-            2;
-        _badgePaint(canvas, _toScreen(at), _drawParallel);
+        final at =
+            (_offsetMid(m, c.segments[0]) + _offsetMid(m, c.segments[1])) / 2;
+        _badgePaint(canvas, _toScreen(at), color, _drawParallel);
       case ConstraintKind.equalLength:
         // Place an "=" badge near each of the two segments so the pairing reads.
-        _badgePaint(canvas, _toScreen(_offsetMid(m, c.segments[0])), _drawEqual);
-        _badgePaint(canvas, _toScreen(_offsetMid(m, c.segments[1])), _drawEqual);
+        _badgePaint(
+            canvas, _toScreen(_offsetMid(m, c.segments[0])), color, _drawEqual);
+        _badgePaint(
+            canvas, _toScreen(_offsetMid(m, c.segments[1])), color, _drawEqual);
       case ConstraintKind.tangent:
         final line = m.segments[c.segments[0]];
         final arc = m.segments[c.segments[1]];
         final shared = (line.a == arc.a || line.a == arc.b) ? line.a : line.b;
-        _badgeText(
-            canvas, _toScreen(m.points[shared]) + const Offset(0, -16), 'T');
+        _badgeText(canvas, _toScreen(m.points[shared]) + const Offset(0, -16),
+            'T', color);
     }
   }
 
@@ -1300,7 +1417,7 @@ class _SketchPainter extends CustomPainter {
   Offset _offsetMid(ParametricSketch m, int si) =>
       m.segMid(si) + m.segNormal(si) * 16;
 
-  void _badgeBg(Canvas canvas, Offset center) {
+  void _badgeBg(Canvas canvas, Offset center, Color color) {
     final r = RRect.fromRectAndRadius(
         Rect.fromCenter(center: center, width: 18, height: 18),
         const Radius.circular(4));
@@ -1308,31 +1425,32 @@ class _SketchPainter extends CustomPainter {
     canvas.drawRRect(
         r,
         Paint()
-          ..color = _glyphColor
+          ..color = color
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1);
   }
 
-  void _badgeText(Canvas canvas, Offset center, String label) {
-    _badgeBg(canvas, center);
+  void _badgeText(Canvas canvas, Offset center, String label, Color color) {
+    _badgeBg(canvas, center, color);
     final tp = TextPainter(
       text: TextSpan(
           text: label,
-          style: const TextStyle(
-              color: _glyphColor, fontSize: 11, fontWeight: FontWeight.bold)),
+          style: TextStyle(
+              color: color, fontSize: 11, fontWeight: FontWeight.bold)),
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
   }
 
-  void _badgePaint(Canvas canvas, Offset center, void Function(Canvas, Offset) sym) {
-    _badgeBg(canvas, center);
-    sym(canvas, center);
+  void _badgePaint(Canvas canvas, Offset center, Color color,
+      void Function(Canvas, Offset, Color) sym) {
+    _badgeBg(canvas, center, color);
+    sym(canvas, center, color);
   }
 
-  void _drawPerp(Canvas canvas, Offset c) {
+  void _drawPerp(Canvas canvas, Offset c, Color color) {
     final p = Paint()
-      ..color = _glyphColor
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
     // A small right-angle symbol.
@@ -1342,18 +1460,18 @@ class _SketchPainter extends CustomPainter {
     canvas.drawLine(c + const Offset(-1, 1), c + const Offset(-1, 4), p);
   }
 
-  void _drawParallel(Canvas canvas, Offset c) {
+  void _drawParallel(Canvas canvas, Offset c, Color color) {
     final p = Paint()
-      ..color = _glyphColor
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
     canvas.drawLine(c + const Offset(-3, -5), c + const Offset(-3, 5), p);
     canvas.drawLine(c + const Offset(3, -5), c + const Offset(3, 5), p);
   }
 
-  void _drawEqual(Canvas canvas, Offset c) {
+  void _drawEqual(Canvas canvas, Offset c, Color color) {
     final p = Paint()
-      ..color = _glyphColor
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
     canvas.drawLine(c + const Offset(-5, -2), c + const Offset(5, -2), p);

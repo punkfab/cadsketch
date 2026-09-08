@@ -7,6 +7,11 @@ All notable changes to CADSketch. Format follows
 ## [Unreleased]
 
 ### Sketching (2D)
+- Constraint inference while dragging: as you drag a vertex, edges that come
+  close to horizontal, vertical, or parallel/perpendicular to a nearby edge snap
+  into alignment (previewed in green), and the constraint is applied on release —
+  so it persists and drives the geometry. Tap a constraint glyph (H, V, ∥, ⊥, =)
+  to select it and Delete to remove it; drag again to re-infer.
 - Line tool: tap to place a connected chain of segments. Tapping on (or near) an
   existing vertex snaps and welds to it, so you can **continue a line from an
   existing point**; tap the first vertex to close the loop, and Done/Esc ends the

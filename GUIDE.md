@@ -39,6 +39,11 @@ chains by ending one on the other's endpoint.
   keyboard, **Delete/Backspace** also removes the selection.
 - **Dimension a line:** tap its dimension number to set a length, bind it to a
   shared parameter, or make it a driven (reference) dimension.
+- **Constraints while dragging:** as you drag a vertex, edges snap to horizontal,
+  vertical, or parallel/perpendicular to a nearby edge when they get close (a
+  green glyph previews it); release to apply the constraint, which then holds the
+  geometry. Tap a constraint glyph (H, V, ∥, ⊥, =) to select it, then Delete to
+  remove it — drag again to re-infer.
 
 ## From sketch to solid
 

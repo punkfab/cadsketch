@@ -102,19 +102,23 @@ class ParametricSketch {
   }
 
   /// Adds a drawn line, inferring constraints against existing geometry, then
-  /// re-solves the whole sketch in place.
-  void addLine(Offset a, Offset b) {
-    _addSegment(a, b);
+  /// re-solves the whole sketch in place. [weld] (model units) is how close two
+  /// endpoints must be to merge; the canvas scales it by 1/zoom so drawing works
+  /// zoomed in.
+  void addLine(Offset a, Offset b, {double? weld}) {
+    _addSegment(a, b, weld: weld);
     solve();
   }
 
   /// Adds a chain of connected segments (one stroke recognized as a polyline),
   /// inferring constraints for each, then solving once. Shared corners merge
-  /// naturally because consecutive vertices coincide.
-  void addPolyline(List<Offset> vertices) {
+  /// naturally because consecutive vertices coincide. [weld] scales with zoom.
+  void addPolyline(List<Offset> vertices, {double? weld}) {
     var added = false;
     for (var i = 0; i + 1 < vertices.length; i++) {
-      if (_addSegment(vertices[i], vertices[i + 1]) != null) added = true;
+      if (_addSegment(vertices[i], vertices[i + 1], weld: weld) != null) {
+        added = true;
+      }
     }
     if (added) solve();
   }
@@ -142,9 +146,9 @@ class ParametricSketch {
 
   /// Adds one segment with inference but no solve. Returns its index, or null
   /// if it collapsed to zero length after merging.
-  int? _addSegment(Offset a, Offset b) {
-    final ia = _mergeOrAdd(a);
-    final ib = _mergeOrAdd(b);
+  int? _addSegment(Offset a, Offset b, {double? weld}) {
+    final ia = _mergeOrAdd(a, weld);
+    final ib = _mergeOrAdd(b, weld);
     if (ia == ib) return null;
     final si = segments.length;
     segments.add(Segment(ia, ib));
@@ -166,9 +170,10 @@ class ParametricSketch {
     solve();
   }
 
-  int _mergeOrAdd(Offset p) {
+  int _mergeOrAdd(Offset p, [double? weld]) {
+    final tol = weld ?? mergeTolerance;
     for (var i = 0; i < points.length; i++) {
-      if ((points[i] - p).distance <= mergeTolerance) return i;
+      if ((points[i] - p).distance <= tol) return i;
     }
     points.add(p);
     return points.length - 1;

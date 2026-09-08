@@ -130,7 +130,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
       return;
     }
     if ((m - start).distance < 1e-3) return; // tapped the same point — ignore
-    widget.controller.addSegmentBetween(start, m);
+    widget.controller.addSegmentBetween(start, m, zoom: _zoom);
     final first = _chainFirst;
     final closed = first != null && (m - first).distance < 1e-3;
     setState(() {
@@ -395,7 +395,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
       return;
     }
     if (stroke.length >= 2) {
-      widget.controller.addStroke(stroke);
+      widget.controller.addStroke(stroke, zoom: _zoom);
       setState(() => _sel = null); // drawing clears the selection
     }
   }
@@ -841,17 +841,22 @@ class SketchController extends ChangeNotifier {
   /// Adds a single line segment between two model points, welding each endpoint
   /// onto an existing vertex within merge tolerance. This is how the Line tool
   /// continues a chain from an existing point: pass the existing vertex as [a].
-  void addSegmentBetween(Offset a, Offset b) {
-    model.addLine(a, b);
+  void addSegmentBetween(Offset a, Offset b, {double zoom = 1}) {
+    model.addLine(a, b, weld: _weldForZoom(zoom));
     notifyListeners();
   }
 
-  void addStroke(List<Offset> points) {
+  /// Merge tolerance in model units for a stroke drawn at [zoom]: the 16px screen
+  /// threshold divided by zoom, so vertices aren't over-merged when zoomed in.
+  double _weldForZoom(double zoom) =>
+      ParametricSketch.mergeTolerance / (zoom <= 0 ? 1 : zoom);
+
+  void addStroke(List<Offset> points, {double zoom = 1}) {
     _record();
-    final result = recognizeStroke(points);
+    final result = recognizeStroke(points, scale: zoom);
     switch (result) {
       case PolylineResult(:final vertices):
-        model.addPolyline(vertices);
+        model.addPolyline(vertices, weld: _weldForZoom(zoom));
       case ArcResult(:final start, :final end, :final center, :final radius, :final sweep):
         model.addArc(start, end, center, radius, sweep);
       case DecorationResult(:final entity):

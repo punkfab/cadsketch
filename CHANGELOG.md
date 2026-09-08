@@ -7,6 +7,11 @@ All notable changes to CADSketch. Format follows
 ## [Unreleased]
 
 ### Sketching (2D)
+- Fixed: drawing while zoomed in now works (this is why sketching on a small face
+  "sometimes did nothing"). Stroke recognition and vertex-merge thresholds are now
+  screen-relative — before, a normal on-screen stroke drawn zoomed in was only a
+  few model units long, so it was dropped as noise and its vertices were merged
+  together, and nothing persisted.
 - Zoom in much further on the 2D canvas (raised the max-zoom cap).
 - Fixed: an inner loop that isn't a clean closed loop (e.g. a hole drawn freehand
   that didn't close) no longer makes the whole outer profile disappear — loop

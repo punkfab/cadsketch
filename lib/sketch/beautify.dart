@@ -72,12 +72,21 @@ class ArcResult extends StrokeResult {
   final double sweep; // signed, start -> end
 }
 
-StrokeResult recognizeStroke(List<Offset> points) {
-  if (points.length < 2 || _pathLength(points) < kMinStrokeLength) {
+/// Recognizes a stroke. [scale] is the view zoom: the absolute thresholds
+/// (min length, RDP floor, min radius) are in MODEL units, so at high zoom a
+/// perfectly good on-screen stroke is only a few model units long — dividing by
+/// [scale] keeps the thresholds screen-relative, so drawing works zoomed in
+/// (e.g. sketching on a small face) as well as at 1x.
+StrokeResult recognizeStroke(List<Offset> points, {double scale = 1}) {
+  final s = scale <= 0 ? 1.0 : scale;
+  final minLength = kMinStrokeLength / s;
+  final minRdp = kMinRdpEpsilon / s;
+  final minRadius = kMinRadius / s;
+  if (points.length < 2 || _pathLength(points) < minLength) {
     return DecorationResult(RawStroke(points));
   }
 
-  final eps = math.max(kMinRdpEpsilon, kRelativeRdpEpsilon * _diagonal(points));
+  final eps = math.max(minRdp, kRelativeRdpEpsilon * _diagonal(points));
   // Smoothed simplification drives the curve-vs-corner decision (noise-robust);
   // the raw simplification supplies sharper vertices for the polyline output.
   final smoothVerts = _rdp(_smooth(points), eps);
@@ -85,7 +94,7 @@ StrokeResult recognizeStroke(List<Offset> points) {
   if (_maxTurn(smoothVerts) < kCornerThreshold && points.length >= 3) {
     final c = SketchKernel.instance.fitCircle(points);
     if (c != null &&
-        c.radius >= kMinRadius &&
+        c.radius >= minRadius &&
         c.radius <= kMaxRadius &&
         c.rms / c.radius <= kCircleResidualTolerance) {
       final sweep = _sweptAngle(points, c.center);

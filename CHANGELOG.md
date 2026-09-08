@@ -54,6 +54,11 @@ All notable changes to CADSketch. Format follows
   correctly (e.g. a sketched triangle inside a circle, or a smaller circle inside
   a bigger one). The largest closed region — sketched loop OR circle — is taken as
   the outer boundary; anything inside it becomes a hole.
+- Fixed: a circle (or any feature) sketched on a face now renders ON that face
+  instead of floating off to the side. The 3D part view was falling back to
+  buildSolid for a circle-on-face (a decoration, not a sketched loop), which
+  extrudes on the XY plane and ignores the face; it now extrudes on the face
+  plane (Part.solidOnPlane, shared with the Assembly view).
 - Fixed: a face feature (a sketch on a face) now renders in context on its parent
   body. Previously the containing part disappeared and only the new extrusion
   showed, because the view shows one body at a time; a face feature and its parent

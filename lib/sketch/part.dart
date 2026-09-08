@@ -193,6 +193,17 @@ class Part {
     return null;
   }
 
+  /// This part's profile extruded ON ITS PLANE, with [dirSign] giving boss/pocket
+  /// direction — so a face feature sits on the parent face. [buildSolid] ignores
+  /// the plane (extrudes on XY), which is wrong for anything sketched on a face
+  /// (a circle on a cylinder side ended up floating beside it). Holes are ignored
+  /// for the wireframe. Null if there's no closed profile yet.
+  Solid? solidOnPlane() {
+    final pw = profileWithHoles();
+    if (pw == null) return null;
+    return extrudeOnPlane(pw.outer, plane, depth * dirSign);
+  }
+
   /// The part's origin datum in the plane's 2D coordinates: the bounding-box
   /// centre of the sketch geometry (points + circles). This is the reference
   /// frame's origin — rendered as an axis triad in 3D and a crosshair in 2D so

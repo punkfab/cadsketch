@@ -609,6 +609,18 @@ _Scene _buildScene(List<Part> parts, {Set<int>? only}) {
   for (var ai = 0; ai < parts.length; ai++) {
     if (only != null && !only.contains(ai)) continue;
     final p = parts[ai];
+    // A face feature (sketch on a face) MUST extrude on its own plane. buildSolid
+    // ignores the plane and would place it on XY — off the face (e.g. a circle
+    // drawn on a cylinder side ended up floating beside it). This handles a circle
+    // (a decoration, so decompose sees no loop) and sketched-loop bosses/pockets.
+    if (p.referenceLoop != null) {
+      final s = p.solidOnPlane();
+      if (s != null) {
+        index['$ai:0'] = items.length;
+        items.add(_Item(ai, 0, s, p.name, s.centroid));
+      }
+      continue;
+    }
     // A part with drilled holes can't be region-decomposed into simple polygon
     // solids (region loops don't carry holes), so render its holed solid
     // directly — the wireframe then shows the holes, matching STL export.

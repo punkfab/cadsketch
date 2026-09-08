@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../sketch/assembly.dart';
 import '../sketch/part.dart';
-import '../sketch/plane.dart';
 import '../sketch/solid.dart';
 import 'camera.dart';
 import 'sketch_canvas.dart';
@@ -247,7 +246,7 @@ List<AssemblyBody> assemblyBodies(List<Part> parts, List<Mate> mates) {
     if (rootSolid != null) add(rootSolid);
     for (final f in parts) {
       if (f.parent == null || !identical(f.root, p)) continue;
-      final fs = _featureSolid(f);
+      final fs = f.solidOnPlane();
       if (fs != null) add(fs);
     }
     if (verts.isEmpty) continue;
@@ -264,16 +263,6 @@ List<AssemblyBody> assemblyBodies(List<Part> parts, List<Mate> mates) {
     ));
   }
   return bodies;
-}
-
-/// A face feature's solid extruded ON ITS PLANE (in the parent's local frame),
-/// so it sits on the parent face. Direction follows the feature's operation
-/// (union out / difference in) via [Part.dirSign]. Holes are ignored for the
-/// assembly wireframe — placement is what matters here.
-Solid? _featureSolid(Part f) {
-  final pw = f.profileWithHoles();
-  if (pw == null) return null;
-  return extrudeOnPlane(pw.outer, f.plane, f.depth * f.dirSign);
 }
 
 /// Newell's-method normal of a (possibly non-planar) polygon ring — robust to

@@ -24,6 +24,9 @@ Future<void> main() async {
   // library is dlopen'd synchronously). Either way the kernel is ready before
   // the first stroke is solved.
   await ensureKernelReady();
+  // Right-drag pans every view (2D canvas + both 3D views); suppress the web
+  // browser's right-click context menu app-wide so the drag is always clean.
+  if (kIsWeb) BrowserContextMenu.disableContextMenu();
   runApp(const AiSketcherApp());
 }
 

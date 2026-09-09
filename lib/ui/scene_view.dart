@@ -55,7 +55,12 @@ class _SceneViewState extends State<SceneView> {
   ];
 
   double _scaleStartZoom = 1; // _zoom captured at pinch start
-  Offset _pan = Offset.zero; // screen-space camera pan (two-finger drag)
+  Offset _pan = Offset.zero; // screen-space camera pan (two-finger / right-drag)
+
+  // Right- or middle-button drag pans (like the 2D canvas); one-finger/left-drag
+  // still orbits. A pan pointer suppresses orbit for the duration of the drag.
+  int? _panPointer;
+  Offset _panLast = Offset.zero;
 
   void _orbit(Offset d) => setState(() {
         _yaw += d.dx * 0.01;
@@ -65,6 +70,7 @@ class _SceneViewState extends State<SceneView> {
   // Scale gesture: one finger orbits; two fingers pinch-zoom AND pan (a two-finger
   // drag translates, the pinch scale zooms — both at once feel natural).
   void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (_panPointer != null) return; // a right-drag pan owns this gesture
     if (d.pointerCount >= 2) {
       setState(() {
         _zoom = (_scaleStartZoom * d.scale).clamp(0.1, 40.0);
@@ -314,6 +320,27 @@ class _SceneViewState extends State<SceneView> {
               Listener(
                 onPointerSignal: (e) {
                   if (e is PointerScrollEvent) _zoomBy(e.scrollDelta.dy);
+                },
+                onPointerDown: (e) {
+                  if ((e.buttons & kSecondaryButton) != 0 ||
+                      (e.buttons & kMiddleMouseButton) != 0) {
+                    _panPointer = e.pointer;
+                    _panLast = e.localPosition;
+                  }
+                },
+                onPointerMove: (e) {
+                  if (_panPointer == e.pointer) {
+                    setState(() {
+                      _pan += e.localPosition - _panLast;
+                      _panLast = e.localPosition;
+                    });
+                  }
+                },
+                onPointerUp: (e) {
+                  if (_panPointer == e.pointer) _panPointer = null;
+                },
+                onPointerCancel: (e) {
+                  if (_panPointer == e.pointer) _panPointer = null;
                 },
                 child: MouseRegion(
                   onHover: (e) => _hover(e.localPosition, scene, cam),

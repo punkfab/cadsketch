@@ -25,8 +25,11 @@ class _AssemblyViewState extends State<AssemblyView> {
   double _yaw = 0.6;
   double _pitch = -0.5;
   double _zoom = 1; // scroll-wheel / pinch zoom (shrinks the fit radius)
-  Offset _pan = Offset.zero; // screen-space camera pan (two-finger drag)
+  Offset _pan = Offset.zero; // screen-space camera pan (two-finger / right-drag)
   double _scaleStartZoom = 1;
+  // Right- or middle-button drag pans (like the 2D canvas); left-drag orbits.
+  int? _panPointer;
+  Offset _panLast = Offset.zero;
   bool _shaded = false; // wireframe (default) vs flat-shaded solid
   Camera? _camera;
   ({int part, int connector})? _selected;
@@ -48,6 +51,7 @@ class _AssemblyViewState extends State<AssemblyView> {
 
   // One finger orbits; two fingers pinch-zoom AND pan.
   void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (_panPointer != null) return; // a right-drag pan owns this gesture
     if (d.pointerCount >= 2) {
       setState(() {
         _zoom = (_scaleStartZoom * d.scale).clamp(0.1, 40.0);
@@ -140,6 +144,27 @@ class _AssemblyViewState extends State<AssemblyView> {
                             if (e is PointerScrollEvent) {
                               _zoomBy(e.scrollDelta.dy);
                             }
+                          },
+                          onPointerDown: (e) {
+                            if ((e.buttons & kSecondaryButton) != 0 ||
+                                (e.buttons & kMiddleMouseButton) != 0) {
+                              _panPointer = e.pointer;
+                              _panLast = e.localPosition;
+                            }
+                          },
+                          onPointerMove: (e) {
+                            if (_panPointer == e.pointer) {
+                              setState(() {
+                                _pan += e.localPosition - _panLast;
+                                _panLast = e.localPosition;
+                              });
+                            }
+                          },
+                          onPointerUp: (e) {
+                            if (_panPointer == e.pointer) _panPointer = null;
+                          },
+                          onPointerCancel: (e) {
+                            if (_panPointer == e.pointer) _panPointer = null;
                           },
                           child: GestureDetector(
                             onScaleStart: (_) => _scaleStartZoom = _zoom,

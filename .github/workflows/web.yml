@@ -7,6 +7,12 @@ name: Web (landing + app) → DigitalOcean
 #
 # Runs on ubuntu (cheap), unlike the macOS iOS build. The kernel is built once
 # here (emscripten) and once natively for iOS — same native/sketch_kernel.cpp.
+#
+# Speed: this is the fast push-to-prod loop, so the DEPLOY job is the short
+# critical path — it does NOT run tests or build the native kernel. Tests run in
+# a parallel `test` job that surfaces regressions on the commit without blocking
+# the publish. The compiled WASM kernel is cached on the C++ source, so a
+# Dart-only change (the common case) skips the emscripten toolchain entirely.
 on:
   push:
     branches: [main]
@@ -21,7 +27,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-publish:
+  deploy:
     runs-on: ubuntu-latest
     # peaceiris/actions-gh-pages pushes the built site to the `site` branch,
     # which needs write access to repo contents (GITHUB_TOKEN is read-only by default).
@@ -30,10 +36,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
+      # The compiled kernel (web/kernel/sketch_kernel.{js,wasm}) only changes
+      # when the C++ source or the build script does. Restore it on a Dart-only
+      # change so the emscripten setup + compile below are skipped.
+      - name: Cache the WASM kernel
+        id: wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            web/kernel/sketch_kernel.js
+            web/kernel/sketch_kernel.wasm
+          key: wasm-kernel-${{ hashFiles('native/**', 'build_wasm.sh') }}
+
       - name: Set up emscripten
+        if: steps.wasm.outputs.cache-hit != 'true'
         uses: mymindstorm/setup-emsdk@v14
         with:
           version: 3.1.69
+
+      - name: Build the WASM kernel
+        if: steps.wasm.outputs.cache-hit != 'true'
+        run: bash build_wasm.sh
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -41,21 +64,8 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Build the WASM kernel
-        run: bash build_wasm.sh
-
       - name: Install dependencies
         run: flutter pub get
-
-      # flutter test runs on the Dart VM via the native FFI path, so it needs
-      # the kernel .so present at build/native/ (the loader's fallback).
-      - name: Build native kernel (for tests)
-        run: |
-          sudo apt-get update && sudo apt-get install -y ninja-build
-          bash build_native.sh
-
-      - name: Run tests
-        run: flutter test
 
       - name: Build Flutter web (served under /app)
         run: flutter build web --release --base-href /app/
@@ -73,3 +83,28 @@ jobs:
           publish_dir: ./public
           publish_branch: site
           force_orphan: true
+
+  # Runs in parallel with deploy: surfaces test regressions on the commit but
+  # does NOT gate the publish (this is the fast iteration loop). flutter test
+  # runs on the Dart VM via the native FFI path, so it needs the kernel .so.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build native kernel (for tests)
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          bash build_native.sh
+
+      - name: Run tests
+        run: flutter test

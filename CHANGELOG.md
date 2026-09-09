@@ -82,7 +82,9 @@ All notable changes to CADSketch. Format follows
   boss/pocket extrudes the intended way even on a cylinder's back faces (the raw
   winding-dependent normal could point inward and reverse the extrude).
 - Two-finger pan in both 3D views (the part view and the Assembly view): one
-  finger orbits, two fingers pinch-zoom and pan together.
+  finger orbits, two fingers pinch-zoom and pan together. On desktop/web,
+  right-button (or middle-button) drag pans while left-drag orbits — the same
+  pan gesture as the 2D canvas, so panning is consistent across every view.
 - Fixed: "Sketch on face" (and "Add mate point") no longer intermittently act on
   the wrong face after tapping — the picked face is captured at tap time, so it
   survives the view rebuild that selecting a part triggers.

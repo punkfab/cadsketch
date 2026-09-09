@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -241,16 +240,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
   static const double _tapSlop = 10.0;
 
   @override
-  void initState() {
-    super.initState();
-    // On web a right-click pops the browser context menu; suppress it so
-    // right-drag can pan the canvas instead.
-    if (kIsWeb) BrowserContextMenu.disableContextMenu();
-  }
-
-  @override
   void dispose() {
-    if (kIsWeb) BrowserContextMenu.enableContextMenu();
     _focus.dispose();
     super.dispose();
   }

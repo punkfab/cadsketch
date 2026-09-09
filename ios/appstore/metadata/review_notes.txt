@@ -1,10 +1,15 @@
-CADSketch needs no account or sign-in and collects no data. Everything runs on-device and works offline. Universal — runs on iPhone and iPad. Finger drawing works; Apple Pencil is supported but not required.
+Answers to App Review's standard "Information Needed" questions (kept here for every submission):
 
-Core flow to exercise (about a minute; no hardware or account needed):
-1) On the 2D canvas, draw a closed shape — a rough rectangle or circle is fine; strokes are cleaned into precise geometry automatically.
-2) The 3D pane shows the closed profile extruded into a solid. The cube/grid button (top-left of the 3D pane) toggles wireframe vs. shaded.
-3) Drag a corner of the sketch: nearby edges snap to horizontal / vertical / parallel and the alignment is applied as a constraint. Tap a constraint glyph (H, V, ∥) to delete it.
-4) In the 3D view, tap a face and choose "Sketch on face," then draw a shape to add material (Union) or cut into the part (Cut).
-5) The command palette — the lightning button, or Cmd-K with a keyboard — includes Export STL and Import DXF.
+1. Screen recording: provided in the Resolution Center reply, captured on a physical iPad running the current iOS, starting from app launch and showing the typical flow. The app has no account registration, login, or account deletion; no user-generated content is shared or published (drawings stay on the device, so no reporting/blocking mechanisms apply); and there is no paid content — so none of those flows exist to record.
 
-On iPhone the parts panel starts collapsed to a thin rail (tap it to expand) so the canvas has room.
+2. Purpose and target audience: CADSketch turns freehand drawing into precise 2D geometry and then into 3D parts. It is a lightweight CAD sketcher for makers, hobbyists, and students who design parts for 3D printing or fabrication. The problem it solves: desktop CAD is heavy and mouse-driven, while sketching on a tablet with a finger or Apple Pencil is fast but imprecise. CADSketch recognizes lines, arcs, and circles in a stroke and cleans them up with a constraint solver into exact, well-proportioned geometry; closed profiles extrude into 3D solids; features can be sketched directly on a part's faces; parts can be assembled with mates; DXF drawings import and parts export as STL for printing. General audience; no age-restricted content.
+
+3. Setup and access: No account, sign-in, credentials, or sample files are required — launch the app and draw. Core flow (about a minute): (a) draw a rough rectangle or circle on the 2D canvas; the stroke is cleaned into precise geometry; (b) the 3D pane shows the closed profile extruded into a solid — the cube/grid button toggles wireframe/shaded; (c) drag a corner: nearby edges snap to horizontal/vertical/parallel and the alignment is applied as a constraint (tap a glyph to remove it); (d) in the 3D view tap a face, choose "Sketch on face," and draw a shape to add material (Union) or cut into the part (Cut); (e) the command palette (lightning button, or Cmd-K with a keyboard) has Export STL and Import DXF. On iPhone the parts panel starts collapsed to a thin rail (tap to expand).
+
+4. External services: None. CADSketch is fully self-contained and works offline. Stroke recognition, the 2D constraint solver, 3D extrusion, and STL/DXF handling are all computed on-device by the app's own code. It uses no data providers, authentication services, payment processors, analytics, advertising, third-party SDKs, or AI/ML services. The product's website is cadsketch.ai, but the app contains no artificial-intelligence or machine-learning functionality and makes no network requests.
+
+5. Regional differences: None. The app functions identically in every region, with a single English localization.
+
+6. Regulated industry / protected material: Not applicable. CADSketch is a general-purpose drawing and CAD tool; it includes no third-party protected content and does not operate in a regulated industry.
+
+Privacy: no data is collected or transmitted (consistent with the App Privacy answers). Universal — iPhone and iPad. Finger drawing works; Apple Pencil is supported but not required.

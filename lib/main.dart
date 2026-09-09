@@ -227,6 +227,8 @@ class _SketchHomeState extends State<SketchHome> {
         }),
         _Command('Import DXF…', 'Import a DXF drawing as a new sketch part',
             Icons.file_open_outlined, _importDxf),
+        _Command('New project', 'Start over: clears every part, mate, and parameter',
+            Icons.note_add_outlined, _newProject),
         _Command('Add part', 'Start a new empty body', Icons.add,
             () async => _controller.addPart()),
         _Command(
@@ -242,6 +244,30 @@ class _SketchHomeState extends State<SketchHome> {
         _Command('Clear active sketch', 'Erase the active part’s geometry',
             Icons.clear_all, () async => _controller.clear()),
       ];
+
+  /// New project: reset the whole document, confirming first if there's work.
+  Future<void> _newProject() async {
+    if (_controller.hasWork) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('New project?'),
+          content: const Text('This clears every part, mate point, and shared '
+              'parameter. It can’t be undone.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('New project')),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+    _controller.newProject();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -324,7 +350,12 @@ class _SketchHomeState extends State<SketchHome> {
             ),
           ),
           IconButton(
-            tooltip: 'Clear',
+            tooltip: 'New project',
+            icon: const Icon(Icons.note_add_outlined),
+            onPressed: _newProject,
+          ),
+          IconButton(
+            tooltip: 'Clear active sketch',
             icon: const Icon(Icons.delete_outline),
             onPressed: _controller.clear,
           ),

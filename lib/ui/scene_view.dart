@@ -147,7 +147,7 @@ class _SceneViewState extends State<SceneView> {
   // A mate point of the active part under the cursor, or null.
   int? _hitConnector(Offset p, Camera cam) {
     final part = widget.controller.active;
-    final solid = part.buildSolid();
+    final solid = part.displaySolid();
     if (solid == null) return null;
     int? best;
     var bestD = 14.0;
@@ -245,7 +245,7 @@ class _SceneViewState extends State<SceneView> {
     // OWN solid. Map the picked face to the nearest face on that solid so the
     // mate point lands on the right face regardless of decomposition. (Uses the
     // solid captured at tap time, so it's valid after the scene rebuilt.)
-    final partSolid = widget.controller.active.buildSolid();
+    final partSolid = widget.controller.active.displaySolid();
     if (partSolid == null) return;
     final pickedCentroid = solid.faceCentroid(f);
     widget.controller.addConnector(partSolid.faceNearest(pickedCentroid));
@@ -819,7 +819,7 @@ class _ScenePainter extends CustomPainter {
     // User-added mate points on the active part: a pin at the face centroid with
     // a stub along the face normal (the frame that fastens flush to another).
     final activePart = parts[activeIndex];
-    final aSolid = activePart.buildSolid();
+    final aSolid = activePart.displaySolid();
     if (aSolid != null) {
       final pinFill = Paint()..color = const Color(0xFFFFC857);
       final pinLine = Paint()

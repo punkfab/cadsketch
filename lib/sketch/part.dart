@@ -55,17 +55,13 @@ class MateConnector {
 
   Vec3 origin(Solid s) => s.faceCentroid(resolvedFace(s));
 
-  /// The face normal, oriented OUTWARD (away from the solid's centroid). A
-  /// fasten mate opposes the two normals to bring faces flush, so both must
-  /// point out of their solids. Extruded caps share a profile winding, so the
-  /// raw Newell normal can point inward — this corrects it.
-  Vec3 normal(Solid s) {
-    final f = resolvedFace(s);
-    final n = s.faceNormal(f);
-    final d = s.faceCentroid(f) - s.centroid; // outward direction
-    final facingOut = n.x * d.x + n.y * d.y + n.z * d.z >= 0;
-    return facingOut ? n : n * -1.0;
-  }
+  /// The face normal, oriented OUTWARD (out of the solid). A fasten mate
+  /// opposes the two normals to bring faces flush, so both must point out of
+  /// their solids. Extruded caps share a profile winding, so the raw Newell
+  /// normal can point inward; "away from the centroid" fixed that for convex
+  /// bodies but pointed a boss side / hole wall inward — so this now probes
+  /// inside/outside (Solid.outwardNormal) instead (#5).
+  Vec3 normal(Solid s) => s.outwardNormal(resolvedFace(s));
 }
 
 /// An opaque deep-copy of a part's editable 2D content, used for undo/redo.
@@ -192,6 +188,13 @@ class Part {
     }
     return null;
   }
+
+  /// The solid the 3D view actually SHOWS for this part: a face feature is
+  /// extruded on its plane, a base body via [buildSolid]. Mate points must be
+  /// anchored, hit-tested and drawn against THIS — resolving a feature's pin
+  /// against buildSolid (its XY-plane extrusion) put it on invisible geometry
+  /// pointing an arbitrary way: the "phantom mate points" (#5).
+  Solid? displaySolid() => referenceLoop != null ? solidOnPlane() : buildSolid();
 
   /// This part's profile extruded ON ITS PLANE, with [dirSign] giving boss/pocket
   /// direction — so a face feature sits on the parent face. [buildSolid] ignores

@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ai_sketcher/sketch/model.dart';
 import 'package:ai_sketcher/ui/sketch_canvas.dart';
 
-// Undo/redo: per-part sketch history. Discrete edits record the pre-edit state;
-// a drag coalesces (beginSketchEdit ... endSketchEdit) into one step.
+// Undo/redo: ONE document-wide history (each entry = part + snapshot), so Undo
+// reverts the most recent edit wherever it happened and switches to that part.
+// Discrete edits record the pre-edit state; a drag coalesces (beginSketchEdit
+// ... endSketchEdit) into one step.
 
 SketchController _square() {
   final c = SketchController();
@@ -58,13 +60,14 @@ void main() {
     expect(c.canUndo, isFalse);
   });
 
-  test('undo history is per-part', () {
+  test('undo history is document-wide: reverts the last edit anywhere (#1)', () {
     final c = _square();
     c.deleteSegment(0); // records on part 0
-    c.addPart(); // part 1 becomes active, with its own empty history
-    expect(c.canUndo, isFalse, reason: 'the new part has no history');
-    c.setActive(0);
-    expect(c.canUndo, isTrue, reason: "part 0's history is intact");
+    c.addPart(); // part 1 becomes active
+    expect(c.canUndo, isTrue, reason: 'history is shared across parts');
+    c.undo();
+    expect(c.activeIndex, 0, reason: 'undo switches to the part it changed');
+    expect(c.model.segments.length, 4, reason: "part 0's segment is back");
   });
 
   test('deleting a whole point is undoable', () {

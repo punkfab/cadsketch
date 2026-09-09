@@ -22,10 +22,16 @@ class Vec3 {
 }
 
 class Solid {
-  const Solid(this.vertices, this.edges, this.faces);
+  const Solid(this.vertices, this.edges, this.faces,
+      {this.holeRings = const []});
   final List<Vec3> vertices;
   final List<List<int>> edges; // each [i, j] indexes vertices
   final List<List<int>> faces; // each an ordered vertex-index ring
+
+  /// Through-hole outlines (vertex-index rings), for solids whose cap faces
+  /// span a hole — a single ring can't cut one out. [containsPoint] subtracts
+  /// these so a point in a hole's air isn't counted as inside the material.
+  final List<List<int>> holeRings;
 
   Vec3 get centroid {
     var c = const Vec3(0, 0, 0);
@@ -126,6 +132,41 @@ class Solid {
     }
     return inside;
   }
+
+  /// True if [p] lies inside the closed solid: parity of face crossings along a
+  /// skewed ray (skewed so it doesn't run along edges). This is what "outward"
+  /// must be decided with on a NON-convex body — a boss's side face or a hole
+  /// wall can have its centroid on the "wrong" side of the body centroid, so
+  /// "away from the centroid" pointed those normals inward (#5).
+  bool containsPoint(Vec3 p, {double eps = 1e-6}) {
+    const dir = Vec3(0.7071067811865476, 0.5773502691896258, 0.4082482904638631);
+    var crossings = 0;
+    for (var f = 0; f < faces.length; f++) {
+      final ring = faces[f];
+      if (ring.length < 3) continue;
+      final n = faceNormal(f);
+      final denom = _dot(n, dir);
+      if (denom.abs() < 1e-9) continue;
+      final t = _dot(n, vertices[ring[0]] - p) / denom;
+      if (t <= eps) continue;
+      final h = p + dir * t;
+      if (!_inFace(h, ring, n)) continue;
+      // A cap ring spans its holes, so a hit inside a hole ring is really in
+      // the hole's air, not on the face. (A wall face projects a hole ring to
+      // a degenerate sliver, so this only bites on the caps.)
+      if (holeRings.any((hr) => _inFace(h, hr, n))) continue;
+      crossings++;
+    }
+    return crossings.isOdd;
+  }
+
+  /// [faceNormal] oriented to point OUT of the solid, decided by probing just
+  /// off the face: if that point is inside, flip. Robust on non-convex bodies.
+  Vec3 outwardNormal(int f) {
+    final n = faceNormal(f);
+    final step = math.max(1e-6, boundingRadius * 1e-4);
+    return containsPoint(faceCentroid(f) + n * step) ? n * -1.0 : n;
+  }
 }
 
 double _dot(Vec3 a, Vec3 b) => a.x * b.x + a.y * b.y + a.z * b.z;
@@ -194,8 +235,13 @@ Solid extrudeWithHolesSolid(
   }
 
   ringEdgesAndWalls(ob, n);
+  // Remember each hole's outline so inside/outside tests can subtract the
+  // hole's air from the (hole-spanning) cap rings.
+  final holeRings = <List<int>>[];
   for (final h in holes) {
-    ringEdgesAndWalls(addRingVerts(h), h.length);
+    final hb = addRingVerts(h);
+    ringEdgesAndWalls(hb, h.length);
+    holeRings.add([for (var i = 0; i < h.length; i++) hb + i]);
   }
-  return Solid(verts, edges, faces);
+  return Solid(verts, edges, faces, holeRings: holeRings);
 }

@@ -7,6 +7,7 @@ import 'package:ai_sketcher/sketch/entities.dart';
 import 'package:ai_sketcher/sketch/model.dart';
 import 'package:ai_sketcher/sketch/part.dart';
 import 'package:ai_sketcher/sketch/plane.dart';
+import 'package:ai_sketcher/ui/sketch_canvas.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UI RULES — the regression registry.
@@ -161,6 +162,89 @@ void main() {
 
     test('RULE: a circle-only sketch is a cylinder', () {
       expect(cylinderPart().buildSolid(), isNotNull);
+    });
+  });
+
+  group('RULES · document', () {
+    SketchController boxWithBoss() {
+      final c = SketchController();
+      c.addStroke(square);
+      final base = c.parts[0];
+      final body = base.buildSolid()!;
+      final plane = SketchPlane.fromFace(body, 3);
+      final ref = [for (final vi in body.faces[3]) plane.to2d(body.vertices[vi])];
+      c.addPlaneSketch(plane, name: 'Face sketch', reference: ref, parent: base);
+      c.active.depth = 10;
+      c.active.decorations.add(CircleEntity(const Offset(0, 0), 8));
+      return c;
+    }
+
+    test('RULE (#1): Undo reverts the LAST edit anywhere; the base body never vanishes', () {
+      final c = boxWithBoss();
+      addTearDown(c.dispose);
+      // Last edit was on the feature (addStroke records; the decoration add above
+      // did not, so make a recorded edit on the feature now).
+      c.addStroke(const [Offset(2, 2), Offset(6, 2)]);
+      c.activeIndex = 0; // user looks at the base, then hits Undo
+      c.undo();
+      expect(c.parts[0].buildSolid(), isNotNull, reason: 'the base body is still there');
+      expect(c.activeIndex, 1, reason: 'undo switched to the part that changed');
+    });
+
+    test('RULE (#5): a mate normal on a hole wall points INTO the hole (out of the material)', () {
+      final plate = Part('Plate')..depth = 10;
+      plate.sketch.addPolyline(square);
+      plate.decorations.add(CircleEntity(const Offset(50, 50), 10)); // through-hole
+      final s = plate.buildSolid()!;
+      var checked = 0;
+      for (var f = 0; f < s.faces.length; f++) {
+        final c = s.faceCentroid(f);
+        final n = s.faceNormal(f);
+        final radial = math.sqrt((c.x - 50) * (c.x - 50) + (c.y - 50) * (c.y - 50));
+        if (n.z.abs() > 0.5 || radial > 12) continue; // only the hole wall
+        final out = s.outwardNormal(f);
+        // toward the hole axis = out of the material
+        expect(out.x * (50 - c.x) + out.y * (50 - c.y), greaterThan(0));
+        checked++;
+      }
+      expect(checked, greaterThan(0), reason: 'found hole-wall faces');
+    });
+
+    test('RULE (#5): a feature\'s pins resolve against the solid on screen (its plane)', () {
+      final c = boxWithBoss();
+      addTearDown(c.dispose);
+      final feat = c.parts[1];
+      final shown = feat.displaySolid()!;
+      final fc = c.parts[0].buildSolid()!.faceCentroid(3);
+      for (final v in shown.vertices) {
+        expect((v - fc).length, lessThan(40), reason: 'displaySolid sits on the face');
+      }
+      expect(feat.buildSolid()!.centroid.length, lessThan(fc.length / 2),
+          reason: 'buildSolid (XY) is NOT what pins may use for a feature');
+    });
+
+    test('RULE (#6): deleting a body deletes its face features (and their mates)', () {
+      final c = boxWithBoss();
+      addTearDown(c.dispose);
+      c.addPart(); // an unrelated second body survives
+      c.addStroke(const [Offset(200, 0), Offset(300, 0), Offset(300, 100), Offset(200, 100), Offset(200, 0)]);
+      expect(c.parts.length, 3);
+      c.removePart(0);
+      expect(c.parts.map((p) => p.name), ['Part 3'],
+          reason: 'body + its feature gone, unrelated body kept');
+      expect(c.parts.every((p) => p.parent == null), isTrue);
+    });
+
+    test('RULE (#7): New project resets everything to one empty part', () {
+      final c = boxWithBoss();
+      addTearDown(c.dispose);
+      expect(c.hasWork, isTrue);
+      c.newProject();
+      expect(c.parts.length, 1);
+      expect(c.parts[0].sketch.points, isEmpty);
+      expect(c.mates, isEmpty);
+      expect(c.canUndo, isFalse);
+      expect(c.hasWork, isFalse);
     });
   });
 }

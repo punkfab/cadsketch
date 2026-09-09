@@ -7,6 +7,23 @@ All notable changes to CADSketch. Format follows
 ## [Unreleased]
 
 ### Sketching (2D)
+- Fixed (#1): the main body no longer disappears leaving only its face-feature
+  extrusions. Undo/redo was per part, so one Undo with the body selected
+  reverted its whole sketch while the features kept theirs. Undo is now
+  document-wide: it reverts the most recent edit wherever it happened and
+  switches to that part.
+- New project (#7): app bar + ⌘K. Resets every part, mate point, shared
+  parameter, and history to one empty part, with a confirm when there's work.
+  "Clear" still only wipes the active sketch.
+- Fixed (#6): deleting a body now deletes its face features too (recursively)
+  and drops their mates — an orphaned feature was an extrusion floating with no
+  body.
+- Fixed (#5): phantom mate points and inward-pointing normals. A pin on a face
+  feature was anchored/drawn against the feature's XY-plane extrusion instead
+  of the geometry on screen; pins now use the displayed solid. And "outward"
+  is now decided by a true inside/outside probe instead of "away from the
+  centroid", which pointed a boss side or hole wall inward. Sketch-on-face uses
+  the same rule.
 - Fixed: dragging a vertex now moves ONLY that vertex ("moving points collapsed
   the shape instead of just moving the point"). Stroke recognition auto-adds
   H/V/equal-length constraints to a clean shape; dragging a corner against one

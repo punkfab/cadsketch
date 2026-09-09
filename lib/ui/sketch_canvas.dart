@@ -754,46 +754,48 @@ class SketchController extends ChangeNotifier {
   ParametricSketch get model => active.sketch;
   List<SketchEntity> get decorations => active.decorations;
 
-  // --- Undo / redo (per-part sketch history) -------------------------------
-  // Each part keeps its own undo/redo stacks of sketch snapshots. A discrete
-  // edit records the pre-edit state; a drag records once at the start (via
-  // beginSketchEdit) and its many movePoint calls are coalesced into one step.
-  final Map<Part, ({List<SketchState> undo, List<SketchState> redo})> _history = {};
+  // --- Undo / redo (document-wide) ------------------------------------------
+  // ONE history for the whole document: each entry is (part, snapshot). Undo
+  // reverts the most recent edit WHEREVER it happened and switches to that part
+  // so the change is visible — which is what an app-bar Undo means. Per-part
+  // stacks let a single Undo with the base body selected revert its whole
+  // sketch while its face features kept theirs: the body vanished, leaving only
+  // the extrusions (#1). A discrete edit records the pre-edit state; a drag
+  // records once at the start (beginSketchEdit) and its many movePoint calls
+  // are coalesced into one step.
+  final List<({Part part, SketchState state})> _undo = [];
+  final List<({Part part, SketchState state})> _redo = [];
   bool _recordingSuspended = false;
   static const int _historyLimit = 100;
 
-  ({List<SketchState> undo, List<SketchState> redo}) _hist(Part p) =>
-      _history.putIfAbsent(p, () => (undo: [], redo: []));
-
-  /// Pushes the active part's current state onto its undo stack (clearing redo),
-  /// unless recording is suspended (mid-drag). Call BEFORE a mutation.
+  /// Pushes the active part's current state onto the undo stack (clearing
+  /// redo), unless recording is suspended (mid-drag). Call BEFORE a mutation.
   void _record() {
     if (_recordingSuspended) return;
-    final h = _hist(active);
-    h.undo.add(active.captureState());
-    if (h.undo.length > _historyLimit) h.undo.removeAt(0);
-    h.redo.clear();
+    _undo.add((part: active, state: active.captureState()));
+    if (_undo.length > _historyLimit) _undo.removeAt(0);
+    _redo.clear();
   }
 
-  bool get canUndo => _history[active]?.undo.isNotEmpty ?? false;
-  bool get canRedo => _history[active]?.redo.isNotEmpty ?? false;
+  bool get canUndo => _undo.isNotEmpty;
+  bool get canRedo => _redo.isNotEmpty;
 
-  void undo() {
-    final h = _hist(active);
-    if (h.undo.isEmpty) return;
-    h.redo.add(active.captureState());
-    active.restoreState(h.undo.removeLast());
-    active.sketch.solve();
-    notifyListeners();
-  }
+  void undo() => _step(_undo, _redo);
+  void redo() => _step(_redo, _undo);
 
-  void redo() {
-    final h = _hist(active);
-    if (h.redo.isEmpty) return;
-    h.undo.add(active.captureState());
-    active.restoreState(h.redo.removeLast());
-    active.sketch.solve();
-    notifyListeners();
+  void _step(List<({Part part, SketchState state})> from,
+      List<({Part part, SketchState state})> to) {
+    while (from.isNotEmpty) {
+      final e = from.removeLast();
+      final i = parts.indexOf(e.part);
+      if (i < 0) continue; // that part was removed since — skip its entries
+      to.add((part: e.part, state: e.part.captureState()));
+      e.part.restoreState(e.state);
+      e.part.sketch.solve();
+      activeIndex = i; // show the part that changed
+      notifyListeners();
+      return;
+    }
   }
 
   /// Begins a coalesced edit (a drag): records once, then suspends recording so
@@ -810,8 +812,30 @@ class SketchController extends ChangeNotifier {
   /// didn't drag): drops the snapshot [beginSketchEdit] pushed.
   void cancelSketchEdit() {
     _recordingSuspended = false;
-    final h = _history[active];
-    if (h != null && h.undo.isNotEmpty) h.undo.removeLast();
+    if (_undo.isNotEmpty && identical(_undo.last.part, active)) _undo.removeLast();
+  }
+
+  /// True if the document holds anything worth a confirm before a reset.
+  bool get hasWork =>
+      parts.length > 1 ||
+      mates.isNotEmpty ||
+      parameters.isNotEmpty ||
+      parts.first.sketch.points.isNotEmpty ||
+      parts.first.decorations.isNotEmpty ||
+      parts.first.importedSolid != null;
+
+  /// Resets the whole document — parts, mates, shared parameters, undo history
+  /// — to a single empty part (#7). "Clear" only wipes the active sketch.
+  void newProject() {
+    parts
+      ..clear()
+      ..add(Part('Part 1'));
+    activeIndex = 0;
+    mates.clear();
+    parameters.clear();
+    _undo.clear();
+    _redo.clear();
+    notifyListeners();
   }
 
   void addPart() {
@@ -1055,35 +1079,61 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Removes a whole part (body). The last part isn't removed but reset, so the
-  /// workspace always has one active sketch. Mates referencing the removed part
-  /// are dropped and the rest reindexed.
+  /// Every part rooted at [index]'s part: the body plus its face features,
+  /// recursively (a feature on a feature goes too).
+  Set<Part> featureFamily(int index) {
+    final gone = <Part>{parts[index]};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final p in parts) {
+        final parent = p.parent;
+        if (!gone.contains(p) && parent != null && gone.contains(parent)) {
+          gone.add(p);
+          grew = true;
+        }
+      }
+    }
+    return gone;
+  }
+
+  /// Removes a part (body) AND every face feature rooted at it — an orphaned
+  /// feature is an extrusion floating with no body (#6). If nothing survives,
+  /// the workspace resets to one empty part so there's always an active sketch.
+  /// Mates referencing any removed part are dropped; the rest are reindexed.
   void removePart(int index) {
     if (index < 0 || index >= parts.length) return;
-    if (parts.length == 1) {
-      parts[0] = Part('Part 1');
+    final gone = featureFamily(index);
+    final survivors = [for (final p in parts) if (!gone.contains(p)) p];
+    _undo.removeWhere((e) => gone.contains(e.part));
+    _redo.removeWhere((e) => gone.contains(e.part));
+    if (survivors.isEmpty) {
+      parts
+        ..clear()
+        ..add(Part('Part 1'));
       activeIndex = 0;
       mates.clear();
       notifyListeners();
       return;
     }
-    final removed = parts.removeAt(index);
-    // Promote the removed body's features to base bodies (parent -> null) so they
-    // don't get orphaned — an orphaned feature roots at a part no longer in the
-    // list and vanishes from the assembly / part view.
-    for (final p in parts) {
-      if (identical(p.parent, removed)) p.parent = null;
+    final newIndex = <int, int>{};
+    for (var i = 0, j = 0; i < parts.length; i++) {
+      if (!gone.contains(parts[i])) newIndex[i] = j++;
     }
+    final activePart = parts[activeIndex];
+    parts
+      ..clear()
+      ..addAll(survivors);
     final kept = <Mate>[
       for (final m in mates)
-        if (m.partA != index && m.partB != index)
-          Mate(m.partA > index ? m.partA - 1 : m.partA, m.connectorA,
-              m.partB > index ? m.partB - 1 : m.partB, m.connectorB)
+        if (newIndex.containsKey(m.partA) && newIndex.containsKey(m.partB))
+          Mate(newIndex[m.partA]!, m.connectorA, newIndex[m.partB]!, m.connectorB)
     ];
     mates
       ..clear()
       ..addAll(kept);
-    if (activeIndex >= parts.length) activeIndex = parts.length - 1;
+    final ai = parts.indexOf(activePart);
+    activeIndex = ai >= 0 ? ai : index.clamp(0, parts.length - 1);
     notifyListeners();
   }
 
@@ -1161,7 +1211,7 @@ class SketchController extends ChangeNotifier {
     // Anchor the connector to its face centroid so it survives face re-indexing
     // (e.g. when a hole is later drilled and buildSolid returns a longer face
     // list). resolvedFace() re-maps by nearest centroid on every use.
-    final solid = active.buildSolid();
+    final solid = active.displaySolid();
     final anchor = (solid != null &&
             faceIndex >= 0 &&
             faceIndex < solid.faces.length)

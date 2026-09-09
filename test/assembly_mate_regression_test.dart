@@ -52,8 +52,7 @@ void main() {
     expect(assemblyBodies(c.parts, c.mates).length, 1);
   });
 
-  test('deleting a base body keeps its features in the assembly (re-parented)',
-      () {
+  test('deleting a base body deletes its features with it (#6)', () {
     final c = _square1(); // part 0: base
     final base = c.parts[0];
     c.addPlaneSketch(SketchPlane.xy, name: 'Boss',
@@ -62,12 +61,14 @@ void main() {
     _square(c.model, 20, 20); // part 1: the feature
     expect(assemblyBodies(c.parts, c.mates).length, 1);
 
-    c.removePart(0); // delete the base
+    c.removePart(0); // delete the base -> the feature goes too
+    // Nothing survived, so the workspace resets to one empty part (never a
+    // lone extrusion floating with no body).
     expect(c.parts.length, 1);
-    expect(c.parts[0].parent, isNull,
-        reason: 'the orphaned feature is promoted to a base body');
-    expect(assemblyBodies(c.parts, c.mates).length, 1,
-        reason: 'the ex-feature still shows in the assembly');
+    expect(c.parts[0].parent, isNull);
+    expect(c.parts[0].sketch.points, isEmpty);
+    expect(assemblyBodies(c.parts, c.mates), isEmpty,
+        reason: 'no orphaned ex-feature is left in the assembly');
   });
 
   test('deleting a feature leaves the base body visible', () {

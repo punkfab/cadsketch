@@ -18,6 +18,9 @@ All notable changes to CADSketch. Format follows
 - Fixed (#6): deleting a body now deletes its face features too (recursively)
   and drops their mates — an orphaned feature was an extrusion floating with no
   body.
+- Fixed (#12): in portrait / narrow panes the 3D pane's Depth slider gets its
+  own full-width line instead of being squeezed to a few px beside the labels
+  and buttons. Landscape keeps the single row.
 - Fixed (#9): with a face selected in 3D, the Depth slider now always edits
   the extrude depth of the selected item's part. It used to set a per-region
   override on the *active* part keyed by the selected item's region — with a

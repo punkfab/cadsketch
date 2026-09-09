@@ -437,78 +437,98 @@ class _SceneViewState extends State<SceneView> {
     // so the generic part-depth slider below would be a duplicate — suppress it
     // for a face sketch.
     final isFeature = c.active.referenceLoop != null;
-    final Widget body;
-    if (sel != null && sel < scene.items.length) {
-      // With an item selected the slider edits the extrude depth of THAT
-      // item's part — always, so selecting a face never makes depth
-      // uneditable. (It used to set a per-region override on the ACTIVE part
-      // keyed by the selected item's region, which with a feature active
-      // wrote into the wrong part and did nothing visible. #9)
-      final authored = scene.items[sel].authored;
-      body = Row(children: [
-        IconButton(
-          tooltip: 'Deselect',
-          icon: const Icon(Icons.arrow_back, size: 18),
-          onPressed: () => setState(() {
-            _selItem = null;
-            _selFace = null;
-          }),
-        ),
-        Flexible(
-          child: Text(scene.items[sel].name,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 13)),
-        ),
-        const SizedBox(width: 12),
-        const Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12)),
-        Expanded(
-          child: Slider(
-            value: c.parts[authored].depth.clamp(5, 400),
-            min: 5,
-            max: 400,
-            onChanged: (v) => c.setPartDepth(authored, v),
-          ),
-        ),
-        IconButton(
-          tooltip: 'Delete part',
-          icon: const Icon(Icons.delete_outline, size: 18),
-          color: Colors.redAccent,
-          onPressed: () {
-            c.removePart(scene.items[sel].authored);
-            setState(() {
+    // In a narrow pane (portrait) the depth slider gets its own full-width
+    // line — squeezed onto one row with the labels and buttons it was a few px
+    // wide and useless (#12). Landscape keeps the single row.
+    final Widget body = LayoutBuilder(builder: (context, cons) {
+      final narrow = cons.maxWidth < 560;
+      const depthLabel =
+          Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12));
+      final List<Widget> leading;
+      final List<Widget> trailing;
+      final Widget? slider;
+      if (sel != null && sel < scene.items.length) {
+        // With an item selected the slider edits the extrude depth of THAT
+        // item's part — always, so selecting a face never makes depth
+        // uneditable. (It used to set a per-region override on the ACTIVE part
+        // keyed by the selected item's region, which with a feature active
+        // wrote into the wrong part and did nothing visible. #9)
+        final authored = scene.items[sel].authored;
+        leading = [
+          IconButton(
+            tooltip: 'Deselect',
+            icon: const Icon(Icons.arrow_back, size: 18),
+            onPressed: () => setState(() {
               _selItem = null;
               _selFace = null;
-            });
-          },
-        ),
-      ]);
-    } else {
-      body = Row(children: [
-        Flexible(
-          child: Text(
-            '${scene.items.length} part${scene.items.length == 1 ? '' : 's'}'
-            ' · ${scene.mates.length} mate${scene.mates.length == 1 ? '' : 's'}'
-            '${scene.isEmpty ? '' : ' · tap a part'}',
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
+            }),
           ),
-        ),
-        // The face-feature row already carries the length slider; only the
-        // base-plane part needs the generic depth slider here.
-        if (!isFeature) ...[
-          const SizedBox(width: 12),
-          const Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12)),
-          Expanded(
-            child: Slider(
-              value: c.active.depth.clamp(5, 400),
-              min: 5,
-              max: 400,
-              onChanged: (v) => c.setDepth(v),
+          Flexible(
+            child: Text(scene.items[sel].name,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 13)),
+          ),
+        ];
+        slider = Slider(
+          value: c.parts[authored].depth.clamp(5, 400),
+          min: 5,
+          max: 400,
+          onChanged: (v) => c.setPartDepth(authored, v),
+        );
+        trailing = [
+          IconButton(
+            tooltip: 'Delete part',
+            icon: const Icon(Icons.delete_outline, size: 18),
+            color: Colors.redAccent,
+            onPressed: () {
+              c.removePart(scene.items[sel].authored);
+              setState(() {
+                _selItem = null;
+                _selFace = null;
+              });
+            },
+          ),
+        ];
+      } else {
+        leading = [
+          Flexible(
+            child: Text(
+              '${scene.items.length} part${scene.items.length == 1 ? '' : 's'}'
+              ' · ${scene.mates.length} mate${scene.mates.length == 1 ? '' : 's'}'
+              '${scene.isEmpty ? '' : ' · tap a part'}',
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
             ),
           ),
+        ];
+        // The face-feature row already carries the length slider; only the
+        // base-plane part needs the generic depth slider here.
+        slider = isFeature
+            ? null
+            : Slider(
+                value: c.active.depth.clamp(5, 400),
+                min: 5,
+                max: 400,
+                onChanged: (v) => c.setDepth(v),
+              );
+        trailing = const [];
+      }
+      if (narrow && slider != null) {
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [...leading, const Spacer(), ...trailing]),
+          Row(children: [depthLabel, Expanded(child: slider)]),
+        ]);
+      }
+      return Row(children: [
+        ...leading,
+        if (slider != null) ...[
+          const SizedBox(width: 12),
+          depthLabel,
+          Expanded(child: slider),
         ],
+        ...trailing,
       ]);
-    }
+    });
     // A face sketch is a feature ON a body: expose whether it adds or cuts, its
     // direction, and its length right here so the outcome is never implicit.
     final faceRow = c.active.referenceLoop != null ? _faceFeatureRow(c) : null;

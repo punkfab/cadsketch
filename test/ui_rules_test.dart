@@ -246,5 +246,14 @@ void main() {
       expect(c.canUndo, isFalse);
       expect(c.hasWork, isFalse);
     });
+
+    test('RULE (#9): the depth slider edits the SELECTED part, even with a face selected', () {
+      final c = boxWithBoss(); // the feature is active
+      addTearDown(c.dispose);
+      expect(c.activeIndex, 1);
+      c.setPartDepth(0, 42); // a base face is selected in 3D
+      expect(c.parts[0].depth, 42, reason: 'the base depth changed');
+      expect(c.parts[1].depth, 10, reason: 'the feature is untouched');
+    });
   });
 }

@@ -18,6 +18,10 @@ All notable changes to CADSketch. Format follows
 - Fixed (#6): deleting a body now deletes its face features too (recursively)
   and drops their mates — an orphaned feature was an extrusion floating with no
   body.
+- Fixed (#9): with a face selected in 3D, the Depth slider now always edits
+  the extrude depth of the selected item's part. It used to set a per-region
+  override on the *active* part keyed by the selected item's region — with a
+  feature active it wrote into the wrong part and depth looked uneditable.
 - Fixed (#5): phantom mate points and inward-pointing normals. A pin on a face
   feature was anchored/drawn against the feature's XY-plane extrusion instead
   of the geometry on screen; pins now use the displayed solid. And "outward"

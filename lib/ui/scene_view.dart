@@ -435,11 +435,16 @@ class _SceneViewState extends State<SceneView> {
     final c = widget.controller;
     // A face feature exposes its extrude length in _faceFeatureRow ("Length"),
     // so the generic part-depth slider below would be a duplicate — suppress it
-    // for a face sketch (a selected region still gets its own override slider).
+    // for a face sketch.
     final isFeature = c.active.referenceLoop != null;
     final Widget body;
     if (sel != null && sel < scene.items.length) {
-      final region = scene.items[sel].region;
+      // With an item selected the slider edits the extrude depth of THAT
+      // item's part — always, so selecting a face never makes depth
+      // uneditable. (It used to set a per-region override on the ACTIVE part
+      // keyed by the selected item's region, which with a feature active
+      // wrote into the wrong part and did nothing visible. #9)
+      final authored = scene.items[sel].authored;
       body = Row(children: [
         IconButton(
           tooltip: 'Deselect',
@@ -458,18 +463,12 @@ class _SceneViewState extends State<SceneView> {
         const Text('Depth', style: TextStyle(color: Colors.white54, fontSize: 12)),
         Expanded(
           child: Slider(
-            value: (c.active.regionDepths[region] ?? c.active.depth).clamp(5, 400),
+            value: c.parts[authored].depth.clamp(5, 400),
             min: 5,
             max: 400,
-            onChanged: (v) => c.setRegionDepth(region, v),
+            onChanged: (v) => c.setPartDepth(authored, v),
           ),
         ),
-        if (c.active.regionDepths.containsKey(region))
-          IconButton(
-            tooltip: 'Reset to base depth',
-            icon: const Icon(Icons.restart_alt, size: 18),
-            onPressed: () => c.clearRegionDepth(region),
-          ),
         IconButton(
           tooltip: 'Delete part',
           icon: const Icon(Icons.delete_outline, size: 18),

@@ -838,6 +838,15 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sets the extrude depth of part [index] (not necessarily the active one):
+  /// the 3D pane's slider edits the depth of the SELECTED item's part, so
+  /// selecting a face never makes depth uneditable (#9).
+  void setPartDepth(int index, double depth) {
+    if (index < 0 || index >= parts.length) return;
+    parts[index].depth = depth;
+    notifyListeners();
+  }
+
   void addPart() {
     parts.add(Part('Part ${parts.length + 1}'));
     activeIndex = parts.length - 1;

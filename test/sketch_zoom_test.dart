@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -39,6 +40,32 @@ void main() {
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pump();
     expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
+  testWidgets('right-button drag pans the view (desktop/web) without drawing',
+      (tester) async {
+    final c = SketchController();
+    addTearDown(c.dispose);
+    await _pumpCanvas(tester, c);
+
+    expect(find.byType(FloatingActionButton), findsNothing);
+    final before = c.active.sketch.points.length;
+
+    // A secondary-button (right-click) drag pans, so the reset button appears...
+    final g =
+        await tester.startGesture(const Offset(300, 300), buttons: kSecondaryButton);
+    for (var i = 0; i < 5; i++) {
+      await g.moveBy(const Offset(20, 12));
+      await tester.pump();
+    }
+    await g.up();
+    await tester.pump();
+
+    expect(find.byType(FloatingActionButton), findsOneWidget,
+        reason: 'right-drag pans the view');
+    // ...and it must NOT have drawn a stroke.
+    expect(c.active.sketch.points.length, before,
+        reason: 'a pan drag adds no geometry');
   });
 
   testWidgets('one finger still draws (does not trigger the pan/zoom path)', (tester) async {

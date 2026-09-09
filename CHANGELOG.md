@@ -40,6 +40,10 @@ All notable changes to CADSketch. Format follows
   The on-canvas buttons (delete, reset view, line tool) previously lived inside
   the drawing gesture layer, so tapping one could fire a canvas gesture mid-tap
   and swallow the press; pointer handling is now isolated to the canvas itself.
+- Right-button (or middle-button) drag pans the sketch canvas on desktop/web —
+  a grab-and-drag pan for the mouse, matching two-finger pan on touch. The
+  browser's right-click context menu is suppressed over the canvas so the drag
+  is clean.
 - Pinch-to-zoom and two-finger pan in the sketch canvas, with a reset-view
   button (scroll-wheel zoom on desktop). Stroke widths, vertex dots, constraint
   glyphs, and dimension labels stay a constant on-screen size at any zoom.

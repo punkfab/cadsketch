@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -218,6 +219,12 @@ class _SketchCanvasState extends State<SketchCanvas> {
   double _pinchStartDist = 1;
   Offset _pinchStartModel = Offset.zero; // model point under the initial focal
 
+  // Right- or middle-button drag pans the view (a desktop/web convention; touch
+  // pans with two fingers). A pan pointer never draws or selects.
+  int? _panPointer;
+  Offset _panStart = Offset.zero;
+  Offset _panStartUserPan = Offset.zero;
+
   final _focus = FocusNode();
 
   void _zoomBy(double dy) => setState(() {
@@ -234,14 +241,35 @@ class _SketchCanvasState extends State<SketchCanvas> {
   static const double _tapSlop = 10.0;
 
   @override
+  void initState() {
+    super.initState();
+    // On web a right-click pops the browser context menu; suppress it so
+    // right-drag can pan the canvas instead.
+    if (kIsWeb) BrowserContextMenu.disableContextMenu();
+  }
+
+  @override
   void dispose() {
+    if (kIsWeb) BrowserContextMenu.enableContextMenu();
     _focus.dispose();
     super.dispose();
   }
 
   // --- Pointer routing: 1 finger draws/selects, 2 fingers zoom/pan the view ---
 
-  void _pointerDown(int id, Offset pos) {
+  void _pointerDown(int id, Offset pos, int buttons) {
+    // Right- or middle-button drag pans (grab-and-drag), regardless of tool.
+    if ((buttons & kSecondaryButton) != 0 || (buttons & kMiddleMouseButton) != 0) {
+      _panPointer = id;
+      _panStart = pos;
+      _panStartUserPan = _userPan;
+      _dragPoint = null;
+      setState(() {
+        _active = null;
+        _linePreview = null;
+      });
+      return;
+    }
     _pointers[id] = pos;
     if (_pointers.length == 1) {
       _onDown(pos);
@@ -263,6 +291,10 @@ class _SketchCanvasState extends State<SketchCanvas> {
   }
 
   void _pointerMove(int id, Offset pos) {
+    if (_panPointer == id) {
+      setState(() => _userPan = _panStartUserPan + (pos - _panStart));
+      return;
+    }
     if (!_pointers.containsKey(id)) return;
     _pointers[id] = pos;
     if (_pointers.length >= 2) {
@@ -285,6 +317,10 @@ class _SketchCanvasState extends State<SketchCanvas> {
   }
 
   void _pointerUp(int id) {
+    if (_panPointer == id) {
+      _panPointer = null;
+      return;
+    }
     _pointers.remove(id);
     if (_gesturing) {
       // Stay in gesture mode until every finger lifts, so a lingering finger
@@ -585,7 +621,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
                     child: Listener(
                       behavior: HitTestBehavior.opaque,
                       onPointerDown: (e) =>
-                          _pointerDown(e.pointer, e.localPosition),
+                          _pointerDown(e.pointer, e.localPosition, e.buttons),
                       onPointerMove: (e) =>
                           _pointerMove(e.pointer, e.localPosition),
                       onPointerHover: (e) => _onHover(e.localPosition),

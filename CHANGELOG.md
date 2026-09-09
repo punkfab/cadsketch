@@ -7,6 +7,22 @@ All notable changes to CADSketch. Format follows
 ## [Unreleased]
 
 ### Sketching (2D)
+- Fixed: dragging a vertex now moves ONLY that vertex ("moving points collapsed
+  the shape instead of just moving the point"). Stroke recognition auto-adds
+  H/V/equal-length constraints to a clean shape; dragging a corner against one
+  of them (e.g. pulling the end of a horizontal edge upward) made that
+  constraint unsatisfiable and the solver distorted or collapsed the rest of
+  the shape trying to cope. Grabbing a vertex now releases the inferable
+  constraints on its edges so it moves freely; drag-inference re-adds an
+  alignment on release if you land on one. Tangency and dimensions are kept.
+  Also: H and V can no longer be stacked on the same edge (only a zero-length
+  edge satisfies both — the collapse).
+- Fixed: dimension labels and constraint glyphs stay a fixed on-screen distance
+  (16px) from their line at any zoom. The offset was 16 MODEL units, so zoomed
+  in 50× a label sat 800px from the line it dimensioned.
+- Regression registry: `test/ui_rules_test.dart` states each user-facing rule
+  (one test per bug that broke it) so the suite reads as a spec and a failure
+  names the behaviour that regressed.
 - Fixed: a small circle now recognizes as a circle (this is why "sketch a circle
   on the thin rectangular side face of a cylinder" failed while the round cap
   worked). On a cap you draw a big circle; on a thin side face you draw a small
@@ -66,6 +82,14 @@ All notable changes to CADSketch. Format follows
   correctly (e.g. a sketched triangle inside a circle, or a smaller circle inside
   a bigger one). The largest closed region — sketched loop OR circle — is taken as
   the outer boundary; anything inside it becomes a hole.
+- Fixed: a boss whose sketch overhangs the face it was drawn on no longer floats
+  where it hangs past the edge ("if the sketch goes off the edge of the face we
+  don't close the gap"). A circle on a thin cylinder facet (~10 units wide)
+  almost always overhangs, and the prism was extruded flat from the face plane
+  with nothing beneath the overhang. The base now lofts down to the next face
+  ("up to next"): each base vertex is dropped along -normal onto the parent
+  body, so an overhang meets the adjacent face with no gap. Vertices inside the
+  face stay put; pockets are unchanged.
 - Fixed: a circle (or any feature) sketched on a face now renders ON that face
   instead of floating off to the side. The 3D part view was falling back to
   buildSolid for a circle-on-face (a decoration, not a sketched loop), which

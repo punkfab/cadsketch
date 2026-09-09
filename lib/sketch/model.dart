@@ -510,8 +510,12 @@ class ParametricSketch {
   }
 
   /// Anchor for a segment's dimension label — midpoint pushed to the opposite
-  /// side from the constraint glyphs so they don't overlap.
-  Offset dimAnchor(int si) => segMid(si) - segNormal(si) * 16;
+  /// side from the constraint glyphs so they don't overlap. The push is a
+  /// SCREEN distance (16px), so it's divided by the view [zoom]: a fixed
+  /// model-unit offset put the label hundreds of px from its line when zoomed
+  /// in ("dimensions are way far away from the lines they dimension").
+  Offset dimAnchor(int si, {double zoom = 1}) =>
+      segMid(si) - segNormal(si) * (16 / (zoom <= 0 ? 1 : zoom));
 
   /// Returns the segment whose dimension label is within [radius] of [p], or
   /// null. Used to route taps to dimension editing.
@@ -603,6 +607,24 @@ class ParametricSketch {
     return into > from ? into - 1 : into;
   }
 
+  /// Drops the inferable constraints (H/V/parallel/perpendicular/equal) on
+  /// every segment touching [pi], so a grabbed vertex can be moved freely —
+  /// "just move the point". Without this, dragging against an auto-inferred
+  /// constraint (e.g. pulling the end of a horizontal edge upward) made that
+  /// constraint unsatisfiable and the solver distorted/collapsed the whole
+  /// shape trying to cope. The drag-time snap re-infers an alignment on
+  /// release if the user lands on one, so clean geometry self-heals. Tangency
+  /// (structural for arcs) and driving dimensions are kept.
+  void releaseIncidentConstraints(int pi) {
+    final incident = <int>{
+      for (var si = 0; si < segments.length; si++)
+        if (segments[si].a == pi || segments[si].b == pi) si
+    };
+    if (incident.isEmpty) return;
+    constraints.removeWhere((c) =>
+        c.kind != ConstraintKind.tangent && c.segments.any(incident.contains));
+  }
+
   /// Moves point [pi] to [to] and re-solves with that vertex pinned, so the
   /// rest of the sketch relaxes around it while constraints hold elsewhere.
   void dragPoint(int pi, Offset to) {
@@ -676,15 +698,17 @@ class ParametricSketch {
         vSeg = si;
       }
     }
-    if (snapY != null) {
+    // Never stack H onto a V edge (or vice versa): both together are only
+    // satisfiable by a zero-length edge, which collapses the shape.
+    if (snapY != null && !hasConstraint(ConstraintKind.vertical, [hSeg!])) {
       target = Offset(target.dx, snapY);
-      if (!hasConstraint(ConstraintKind.horizontal, [hSeg!])) {
+      if (!hasConstraint(ConstraintKind.horizontal, [hSeg])) {
         candidates.add(SketchConstraint(ConstraintKind.horizontal, [hSeg]));
       }
     }
-    if (snapX != null) {
+    if (snapX != null && !hasConstraint(ConstraintKind.horizontal, [vSeg!])) {
       target = Offset(snapX, target.dy);
-      if (!hasConstraint(ConstraintKind.vertical, [vSeg!])) {
+      if (!hasConstraint(ConstraintKind.vertical, [vSeg])) {
         candidates.add(SketchConstraint(ConstraintKind.vertical, [vSeg]));
       }
     }

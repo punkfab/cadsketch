@@ -84,7 +84,51 @@ class Solid {
     }
     return best;
   }
+
+  /// Distance along the unit ray [dir] from [origin] to the nearest face it
+  /// hits, or null if it misses every face. A hit within [eps] behind the
+  /// origin counts, so a ray started ON a face reports ~0. Each face is treated
+  /// as a planar polygon: intersect its plane, then point-in-polygon on the
+  /// plane's dominant axis. Used to drop a boss's base onto the body it sits
+  /// on ("up to next") when its sketch overhangs the face it was drawn on.
+  double? rayHit(Vec3 origin, Vec3 dir, {double eps = 1e-6}) {
+    double? best;
+    for (var f = 0; f < faces.length; f++) {
+      final ring = faces[f];
+      if (ring.length < 3) continue;
+      final n = faceNormal(f);
+      final denom = _dot(n, dir);
+      if (denom.abs() < 1e-9) continue; // ray parallel to the face
+      final t = _dot(n, vertices[ring[0]] - origin) / denom;
+      if (t < -eps) continue; // behind the origin
+      if (best != null && t >= best) continue;
+      if (_inFace(origin + dir * t, ring, n)) best = t;
+    }
+    return best;
+  }
+
+  /// Point-in-polygon for [p] (assumed on the face's plane): project both onto
+  /// the plane's dominant axis pair and run the even-odd crossing test.
+  bool _inFace(Vec3 p, List<int> ring, Vec3 n) {
+    final ax = n.x.abs(), ay = n.y.abs(), az = n.z.abs();
+    final (int i0, int i1) =
+        az >= ax && az >= ay ? (0, 1) : (ax >= ay ? (1, 2) : (0, 2));
+    double c(Vec3 v, int i) => i == 0 ? v.x : (i == 1 ? v.y : v.z);
+    final px = c(p, i0), py = c(p, i1);
+    var inside = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      final a = vertices[ring[i]], b = vertices[ring[j]];
+      final axx = c(a, i0), ayy = c(a, i1), bxx = c(b, i0), byy = c(b, i1);
+      if ((ayy > py) != (byy > py) &&
+          px < (bxx - axx) * (py - ayy) / (byy - ayy) + axx) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
 }
+
+double _dot(Vec3 a, Vec3 b) => a.x * b.x + a.y * b.y + a.z * b.z;
 
 /// Extrudes a closed 2D profile (in the sketch's X/Y) by [depth] along Z into a
 /// prism. Bottom ring is vertices 0..n-1, top ring is n..2n-1.

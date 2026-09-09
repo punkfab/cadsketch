@@ -201,7 +201,25 @@ class Part {
   Solid? solidOnPlane() {
     final pw = profileWithHoles();
     if (pw == null) return null;
-    return extrudeOnPlane(pw.outer, plane, depth * dirSign);
+    final prism = extrudeOnPlane(pw.outer, plane, depth * dirSign);
+    if (isSubtractive) return prism;
+    // "Up to next": a boss whose sketch overhangs the face it was drawn on
+    // would float where it hangs past the edge — the prism is extruded flat
+    // from the face plane, so there's nothing beneath the overhang (a circle on
+    // a thin cylinder facet almost always overhangs). Drop each base vertex
+    // along -normal onto the parent body so the overhang lofts down to the
+    // adjacent face instead of leaving a gap. Vertices inside the face hit it
+    // at ~0 and stay put; an overhang with nothing at all beneath it stays on
+    // the plane (a genuinely unsupported overhang).
+    final body = parent?.root.buildSolid();
+    if (body == null) return prism;
+    final down = plane.normal * -1.0;
+    final verts = List<Vec3>.of(prism.vertices);
+    for (var i = 0; i < pw.outer.length; i++) {
+      final t = body.rayHit(verts[i], down);
+      if (t != null && t > 1e-6) verts[i] = verts[i] + down * t;
+    }
+    return Solid(verts, prism.edges, prism.faces);
   }
 
   /// The part's origin datum in the plane's 2D coordinates: the bounding-box

@@ -151,7 +151,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
     int? best;
     var bestD = 24.0; // generous px radius around the number
     for (var si = 0; si < m.segments.length; si++) {
-      final d = (_toScreenPt(m.dimAnchor(si)) - screen).distance;
+      final d = (_toScreenPt(m.dimAnchor(si, zoom: _zoom)) - screen).distance;
       if (d < bestD) {
         bestD = d;
         best = si;
@@ -352,6 +352,12 @@ class _SketchCanvasState extends State<SketchCanvas> {
       if (!_dragMoved &&
           (_downPos == null || (screen - _downPos!).distance < _tapSlop)) {
         return; // still within tap slop — not a drag yet
+      }
+      if (!_dragMoved) {
+        // The grab became a drag: unlock the vertex's edges so it just moves,
+        // instead of the solver fighting their inferred constraints and
+        // distorting/collapsing the rest of the shape.
+        widget.controller.releaseIncidentConstraints(_dragPoint!);
       }
       _dragMoved = true;
       final model = widget.controller.model;
@@ -986,6 +992,13 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Called once when a vertex grab turns into a real drag: releases the
+  /// inferable constraints on its incident edges so the point moves freely
+  /// ("just move the point"); an alignment is re-inferred on release.
+  void releaseIncidentConstraints(int pi) {
+    model.releaseIncidentConstraints(pi);
+  }
+
   /// Snap target + inferred constraint candidates while dragging vertex [pi]
   /// toward [raw] (horizontal / vertical / parallel / perpendicular). The canvas
   /// moves the point to the snapped target live and applies the candidates on
@@ -1471,7 +1484,7 @@ class _SketchPainter extends CustomPainter {
           : isDriving
               ? value.toStringAsFixed(1)
               : '(${value.toStringAsFixed(0)})';
-      _dimLabel(canvas, _toScreen(m.dimAnchor(si)), label, isDriving,
+      _dimLabel(canvas, _toScreen(m.dimAnchor(si, zoom: zoom)), label, isDriving,
           highlighted: si == hoveredDim);
     }
     for (final (pos, label) in circleLabels) {
@@ -1531,8 +1544,10 @@ class _SketchPainter extends CustomPainter {
   }
 
   // Glyph anchor: segment midpoint pushed off the line along its normal.
+  // Glyph offset is a SCREEN distance (16px) — divide by zoom, else the glyph
+  // drifts far from its edge when zoomed in (same bug as the dimension label).
   Offset _offsetMid(ParametricSketch m, int si) =>
-      m.segMid(si) + m.segNormal(si) * 16;
+      m.segMid(si) + m.segNormal(si) * (16 / (zoom <= 0 ? 1 : zoom));
 
   void _badgeBg(Canvas canvas, Offset center, Color color) {
     final r = RRect.fromRectAndRadius(

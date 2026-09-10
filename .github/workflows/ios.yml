@@ -84,29 +84,35 @@ jobs:
       # NOT mint a new cloud-managed certificate on every ephemeral runner — that
       # filled the account's certificate cap and broke the archive. No-ops until
       # IOS_P12_BASE64 / IOS_P12_PASSWORD are set (then falls back to cloud signing).
-      - name: Import distribution certificate
+      - name: Import signing certificates  # BOTH identities — dist alone still mints dev certs (team-wide cap)
         env:
           P12_B64: ${{ secrets.IOS_P12_BASE64 }}
           P12_PASS: ${{ secrets.IOS_P12_PASSWORD }}
+          DEV_P12_B64: ${{ secrets.IOS_DEV_P12_BASE64 }}
+          DEV_P12_PASS: ${{ secrets.IOS_DEV_P12_PASSWORD }}
         run: |
-          if [ -z "$P12_B64" ]; then
-            echo "IOS_P12_BASE64 not set — falling back to cloud-managed signing"
+          if [ -z "$P12_B64" ] && [ -z "$DEV_P12_B64" ]; then
+            echo "No persistent cert secrets set — falling back to cloud-managed signing"
             exit 0
           fi
           KC="$RUNNER_TEMP/ci-signing.keychain-db"
           KC_PASS=$(uuidgen)
-          printf '%s' "$P12_B64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
           security create-keychain -p "$KC_PASS" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KC_PASS" "$KC"
-          security import "$RUNNER_TEMP/dist.p12" -k "$KC" -P "$P12_PASS" \
-            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/xcodebuild
+          import_p12() { # $1=base64 $2=password $3=label
+            printf '%s' "$1" | base64 --decode > "$RUNNER_TEMP/$3.p12"
+            security import "$RUNNER_TEMP/$3.p12" -k "$KC" -P "$2" \
+              -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/xcodebuild
+            rm -f "$RUNNER_TEMP/$3.p12"
+            echo "imported $3 identity"
+          }
+          [ -n "$P12_B64" ]     && import_p12 "$P12_B64"     "$P12_PASS"     dist
+          [ -n "$DEV_P12_B64" ] && import_p12 "$DEV_P12_B64" "$DEV_P12_PASS" dev
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PASS" "$KC" > /dev/null
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          rm -f "$RUNNER_TEMP/dist.p12"
           echo "KEYCHAIN=$KC" >> "$GITHUB_ENV"
           security find-identity -v -p codesigning "$KC"
-
       # Flutter skips CocoaPods when there are no plugin packages (this app is
       # pure FFI), so the kernel pod is never installed and the C++ kernel never
       # links in. Generate the Flutter xcconfig, then run pod install explicitly

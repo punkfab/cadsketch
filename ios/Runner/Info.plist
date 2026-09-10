@@ -74,5 +74,15 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- The file picker plugin links the Photos / image-picker frameworks even
+	     though CADSketch only uses the document picker. Apple rejects a binary
+	     that links them without purpose strings (ITMS-90683, at processing —
+	     the 1.0.6 build vanished this way), so declare them honestly. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>CADSketch only reads a file you explicitly choose to import (DXF, STL, OBJ). It does not browse or access your photos.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>CADSketch does not use the camera; this entry is required by the file-picker component.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>CADSketch does not use the microphone; this entry is required by the file-picker component.</string>
 </dict>
 </plist>

@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
+
 import 'solid.dart';
 
 // Pure-Dart mesh import (STL binary/ASCII, OBJ) -> Solid. This is the harness
@@ -14,6 +16,16 @@ class MeshImportException implements Exception {
   final String message;
   @override
   String toString() => 'MeshImportException: $message';
+}
+
+/// Opens the native document picker for a mesh (.stl / .obj) and returns the
+/// chosen path, or null if cancelled (#11 — replaces the typed-path prompt,
+/// which was unusable on iOS).
+Future<String?> pickMeshPath() async {
+  final res = await FilePicker.pickFiles(
+      type: FileType.custom, allowedExtensions: ['stl', 'obj']);
+  if (res == null || res.files.isEmpty) return null;
+  return res.files.single.path;
 }
 
 /// Reads a mesh file (.stl or .obj) and returns a Solid (vertices/edges/faces).

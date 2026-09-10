@@ -10,5 +10,8 @@ class MeshImportException implements Exception {
   String toString() => 'MeshImportException: $message';
 }
 
+/// Web has no filesystem paths; mesh import isn't offered there.
+Future<String?> pickMeshPath() async => null;
+
 Solid importMeshFile(String path) => throw MeshImportException(
     'Mesh import runs in the desktop harness only (it reads from disk).');

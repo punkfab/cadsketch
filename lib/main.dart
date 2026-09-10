@@ -83,10 +83,9 @@ class _SketchHomeState extends State<SketchHome> {
   }
 
   Future<void> _import() async {
-    final path = await showDialog<String>(
-      context: context,
-      builder: (_) => const _ImportPathDialog(),
-    );
+    // Native document picker (#11); the old typed-path prompt was a dead end
+    // on iOS.
+    final path = await pickMeshPath();
     if (path == null || path.trim().isEmpty) return;
     try {
       final solid = importMeshFile(path.trim());
@@ -100,24 +99,11 @@ class _SketchHomeState extends State<SketchHome> {
   }
 
   Future<void> _importDxf() async {
-    // Web opens a file picker (no filesystem path); desktop prompts for a path.
+    // Every platform opens a picker now: the browser file input on web, the
+    // native document picker elsewhere (#11).
     ({String name, String text})? src;
     try {
-      if (kIsWeb) {
-        src = await readDxf();
-      } else {
-        if (!mounted) return;
-        final path = await showDialog<String>(
-          context: context,
-          builder: (_) => const _ImportPathDialog(
-              title: 'Import DXF',
-              hint: '/home/you/part.dxf',
-              label: 'Path to .dxf',
-              note: null),
-        );
-        if (path == null || path.trim().isEmpty) return;
-        src = await readDxf(path: path.trim());
-      }
+      src = await readDxf();
       if (src == null) return; // cancelled
       final drawing = parseDxf(src.text);
       if (drawing.isEmpty) {
@@ -191,11 +177,11 @@ class _SketchHomeState extends State<SketchHome> {
             'Analyse the active part → featuretree IR (→ editable FreeCAD tree)',
             Icons.account_tree_outlined, () async {
           try {
-            final path = writeFeatureTreeIr(_controller.active);
+            final where = await writeFeatureTreeIr(_controller.active);
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Wrote $path — run it through '
-                    'featuretree/gen.py for an editable FreeCAD tree')));
+                content: Text('Exported $where — featuretree/gen.py turns it '
+                    'into an editable FreeCAD tree')));
           } catch (e) {
             if (!mounted) return;
             ScaffoldMessenger.of(context)
@@ -492,70 +478,6 @@ class _Msg implements Exception {
 /// Prompts for a file path to import (desktop). A native file picker is a later
 /// refinement; typing/pasting a path keeps the harness dependency-free. On web
 /// the caller uses a browser file picker instead.
-class _ImportPathDialog extends StatefulWidget {
-  const _ImportPathDialog({
-    this.title = 'Import mesh',
-    this.label = 'Path to .stl or .obj',
-    this.hint = '/home/you/part.stl',
-    this.note = 'STEP? Convert to STL/OBJ (FreeCAD) for now.',
-  });
-
-  final String title;
-  final String label;
-  final String hint;
-  final String? note;
-
-  @override
-  State<_ImportPathDialog> createState() => _ImportPathDialogState();
-}
-
-class _ImportPathDialogState extends State<_ImportPathDialog> {
-  final _field = TextEditingController();
-
-  @override
-  void dispose() {
-    _field.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _field,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: widget.label,
-              hintText: widget.hint,
-            ),
-            onSubmitted: (v) => Navigator.pop(context, v),
-          ),
-          if (widget.note != null) ...[
-            const SizedBox(height: 8),
-            Text(widget.note!,
-                style: const TextStyle(fontSize: 11, color: Colors.white54)),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _field.text),
-          child: const Text('Import'),
-        ),
-      ],
-    );
-  }
-}
-
 /// One entry in the ⌘K palette: a label, a hint, and the action to run.
 class _Command {
   const _Command(this.label, this.subtitle, this.icon, this.run);

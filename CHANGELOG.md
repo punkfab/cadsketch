@@ -184,6 +184,8 @@ All notable changes to CADSketch. Format follows
 - Assembly view: scroll-wheel zoom.
 
 ### Import
+- Fixed (#11): on iPad/iPhone, Import DXF and Import mesh now open the native
+  document picker. They used to ask for a filesystem path — a dead end on iOS.
 - Import a DXF drawing as a new sketch part (⌘K → "Import DXF…"). LINE,
   LWPOLYLINE, POLYLINE and ARC become the parametric profile; CIRCLE becomes a
   circle (a hole or cylinder via the usual profile rule). Geometry is imported
@@ -193,6 +195,11 @@ All notable changes to CADSketch. Format follows
   ignored for now.)
 
 ### Export
+- Fixed (#10): on iPad/iPhone, Export STL (and the feature-tree export) now
+  save to the app's Documents folder — visible in Files → On My iPad →
+  CADSketch — and open the share sheet (AirDrop, Save to Files, send to a
+  slicer). They used to write into the app's private tmp sandbox, which
+  nothing on the device can reach.
 - STL export of the active part (binary STL), generated directly in-app (no
   external tooling). Web downloads the file; desktop writes it. Interior holes —
   a circle decoration OR a sketched inner loop inside the profile — are cut

@@ -24,7 +24,9 @@ export const APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/ap
 
 // Bump the version in the URI when the widget changes in a breaking way: hosts
 // cache the template by URI.
-const WIDGET_URI = "ui://cadsketch/sketcher-v1.html";
+const WIDGET_URI = "ui://cadsketch/sketcher-v2.html";
+// Earlier URIs stay readable (same page) for hosts holding a cached tool list.
+const LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v1.html"];
 
 const vertex = z
   .array(z.number())
@@ -136,36 +138,38 @@ export function createServer(): McpServer {
     }),
   );
 
-  registerAppResource(
-    server,
-    "CADSketch editor",
-    WIDGET_URI,
-    { mimeType: RESOURCE_MIME_TYPE, description: "The CADSketch sketch editor" },
-    async (): Promise<ReadResourceResult> => {
-      const template = await fs.readFile(path.join(HERE, "widget.html"), "utf-8");
-      const html = template.replaceAll("%%APP_URL%%", APP_URL);
-      const appOrigin = new URL(APP_URL).origin;
-      return {
-        contents: [
-          {
-            uri: WIDGET_URI,
-            mimeType: RESOURCE_MIME_TYPE,
-            text: html,
-            _meta: {
-              ui: {
-                // The editor is the CADSketch web app itself, in a nested frame
-                // on its own origin. Nothing else is loaded or contacted.
-                csp: { frameDomains: [appOrigin], resourceDomains: [], connectDomains: [] },
-                prefersBorder: true,
+  for (const uri of [WIDGET_URI, ...LEGACY_WIDGET_URIS]) {
+    registerAppResource(
+      server,
+      uri === WIDGET_URI ? "CADSketch editor" : `CADSketch editor (${uri})`,
+      uri,
+      { mimeType: RESOURCE_MIME_TYPE, description: "The CADSketch sketch editor" },
+      async (): Promise<ReadResourceResult> => {
+        const template = await fs.readFile(path.join(HERE, "widget.html"), "utf-8");
+        const html = template.replaceAll("%%APP_URL%%", APP_URL);
+        const appOrigin = new URL(APP_URL).origin;
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: RESOURCE_MIME_TYPE,
+              text: html,
+              _meta: {
+                ui: {
+                  // The editor is the CADSketch web app itself, in a nested frame
+                  // on its own origin. Nothing else is loaded or contacted.
+                  csp: { frameDomains: [appOrigin], resourceDomains: [], connectDomains: [] },
+                  prefersBorder: true,
+                },
+                "openai/widgetDescription":
+                  "The CADSketch editor showing the current parts. The user can edit them by hand; edits are reported back as context.",
               },
-              "openai/widgetDescription":
-                "The CADSketch editor showing the current parts. The user can edit them by hand; edits are reported back as context.",
             },
-          },
-        ],
-      };
-    },
-  );
+          ],
+        };
+      },
+    );
+  }
 
   return server;
 }

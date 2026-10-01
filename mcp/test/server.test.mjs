@@ -33,8 +33,8 @@ test("both tools are listed and linked to the widget", async () => {
   const names = tools.map((t) => t.name).sort();
   assert.deepEqual(names, ["draw_parts", "open_sketcher"]);
   for (const t of tools) {
-    assert.equal(t._meta?.ui?.resourceUri, "ui://cadsketch/sketcher-v1.html");
-    assert.equal(t._meta?.["openai/outputTemplate"], "ui://cadsketch/sketcher-v1.html");
+    assert.equal(t._meta?.ui?.resourceUri, "ui://cadsketch/sketcher-v2.html");
+    assert.equal(t._meta?.["openai/outputTemplate"], "ui://cadsketch/sketcher-v2.html");
     assert.equal(t.annotations?.readOnlyHint, true);
   }
 });
@@ -79,8 +79,11 @@ test("open_sketcher opens an empty canvas", async () => {
 });
 
 test("the widget is a self-contained page that frames only the CADSketch app", async () => {
-  const { contents } = await client.readResource({ uri: "ui://cadsketch/sketcher-v1.html" });
+  const { contents } = await client.readResource({ uri: "ui://cadsketch/sketcher-v2.html" });
   const [res] = contents;
+  // A host with a cached tool list still asks for the old address.
+  const legacy = await client.readResource({ uri: "ui://cadsketch/sketcher-v1.html" });
+  assert.equal(legacy.contents[0].text, res.text);
   assert.equal(res.mimeType, "text/html;profile=mcp-app");
   assert.match(res.text, /data-app-url="https:\/\/cadsketch\.ai\/app\/"/);
   assert.ok(!res.text.includes("%%"), "all placeholders filled");

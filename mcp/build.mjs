@@ -28,7 +28,7 @@ const html = (await readFile("widget/shell.html", "utf-8")).replace("/*%%SHELL_J
 
 // --- server, unbundled (dev / droplet / tests) -------------------------------
 await build({
-  entryPoints: ["src/main.ts", "src/stdio.ts", "src/server.ts", "src/geometry.ts", "src/assets.ts", "widget/file-sync.ts"],
+  entryPoints: ["src/main.ts", "src/stdio.ts", "src/server.ts", "src/geometry.ts", "src/assets.ts", "src/relay.ts", "src/live-tools.ts", "widget/file-sync.ts"],
   outdir: "dist",
   outbase: ".",
   platform: "node",
@@ -37,7 +37,7 @@ await build({
   bundle: false,
 });
 // main.js etc. land in dist/src; keep the entry points at dist/ root.
-for (const name of ["main", "stdio", "server", "geometry", "assets"]) {
+for (const name of ["main", "stdio", "server", "geometry", "assets", "relay", "live-tools"]) {
   await copyFile(`dist/src/${name}.js`, `dist/${name}.js`);
 }
 await copyFile("dist/widget/file-sync.js", "dist/file-sync.js");

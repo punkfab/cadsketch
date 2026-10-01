@@ -219,6 +219,31 @@ const waitCtx = async (page, pred, ms = 40000) => {
   await page.close();
 }
 
+// ---- 7. the server's relayed tools: what Codex's model actually calls ---------
+{
+  const page = await newHost("window.H.relayOn = true");
+  await waitCtx(page, (t) => t.includes("CADSketch canvas"));
+  const relay = (tool, args) => page.evaluate(([t, a]) => window.H.relay(t, a), [tool, args]);
+  const drawn = await relay("replace_parts", { parts: [{ name: "plate", depth: 4, profile: [[0, 0], [80, 0], [80, 40], [0, 40]], holes: [[20, 20, 3]] }] });
+  check("a relayed tool call runs in the open editor", !drawn.isError && drawn.structuredContent?.parts?.[0]?.name === "plate", drawn.content?.[0]?.text?.split("\n")[0]);
+  const faces = await relay("list_faces", {});
+  check("list_faces names the top, bottom and four sides", faces.structuredContent?.part?.faces?.length === 6, JSON.stringify(faces.structuredContent?.part?.faces?.[2]?.face));
+  const lug = await relay("sketch_on_face", { face: "top", operation: "boss", depth: 6, rect: [10, 8, 60, 30], name: "lug" });
+  check("sketch_on_face adds a boss on the top face", !lug.isError && lug.structuredContent?.part?.face === "top" && !lug.structuredContent?.warning, lug.content?.[0]?.text?.split("\n")[0]);
+  const slot = await relay("sketch_on_face", { part: "plate", face: { edge: 1 }, operation: "cut", depth: 3, circle: [0, 0, 1.2], name: "port" });
+  check("sketch_on_face cuts into a side face", !slot.isError && slot.structuredContent?.part?.face === "side", slot.content?.[0]?.text?.split("\n")[0]);
+  const t7 = await waitCtx(page, (t) => t.includes("port"));
+  check("the model's context shows the features on their body", /lug: .*union feature on a face of plate/.test(t7) && /port: .*difference feature on a face of plate/.test(t7), t7.split("\n").slice(2).join(" | "));
+  const shot = await relay("screenshot", {});
+  check("a relayed screenshot comes back as an image", shot.content?.[0]?.type === "image" && shot.content[0].data.length > 5000);
+  const bad = await relay("sketch_on_face", { face: "front", operation: "cut", depth: 1, circle: [0, 0, 1] });
+  check("a relayed mistake comes back as an instruction", bad.isError === true && /"top", "bottom"/.test(bad.content?.[0]?.text ?? ""), bad.content?.[0]?.text);
+  await relay("select_part", { part: "plate" });
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${OUT}/fake-faces.png` });
+  await page.close();
+}
+
 await browser.close();
 console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed; ${errors.length} page errors`);
 for (const e of [...new Set(errors)].slice(0, 6)) console.log("  error:", e);

@@ -26,6 +26,15 @@ export function hostScript(widgetHtml, sandbox, prepare, size) {
       H.pending[id] = resolve;
       send({ id, method, params });
     });
+  // The model calling a tool on the SERVER, which relays it to the editor.
+  H.relayQueue = []; H.relayPending = {}; H.relayPolls = 0; H.relayWaiter = null; H.relayId = 1;
+  H.relay = (tool, args) =>
+    new Promise((resolve) => {
+      const command = { id: H.relayId++, tool, args: args ?? {} };
+      H.relayPending[command.id] = resolve;
+      if (H.relayWaiter) H.relayWaiter(command);
+      else H.relayQueue.push(command);
+    });
   H.callTool = (name, args) => H.request("tools/call", { name, arguments: args ?? {} });
   H.openFile = (name, text) => {
     H.files["host-resource://" + name] = { name, text, etag: "v" + H.etag++ };
@@ -108,6 +117,22 @@ export function hostScript(widgetHtml, sandbox, prepare, size) {
         return H.notify("notifications/resources/updated", { uri: m.params.uri });
       }
       case "tools/call":
+        if (m.params.name === "editor_sync") {
+          // The local plugin server's relay (src/relay.ts), in miniature: hand
+          // the editor the next queued command, take back the last one's result.
+          if (!H.relayOn) return reply({ isError: true, content: [{ type: "text", text: "Unknown tool" }] });
+          const back = m.params.arguments?.reply;
+          if (back && H.relayPending[back.id]) {
+            H.relayPending[back.id](back.result);
+            delete H.relayPending[back.id];
+          }
+          H.relayPolls++;
+          const next = H.relayQueue.shift();
+          if (next) return reply({ content: [{ type: "text", text: next.tool }], structuredContent: { command: next } });
+          const timer = setTimeout(() => { H.relayWaiter = null; reply({ content: [{ type: "text", text: "idle" }], structuredContent: {} }); }, 2000);
+          H.relayWaiter = (command) => { clearTimeout(timer); H.relayWaiter = null; reply({ content: [{ type: "text", text: command.tool }], structuredContent: { command } }); };
+          return;
+        }
         // The app calling a SERVER tool (save_export). A real host adds the
         // opened file's path for the server; here we just answer as the server would.
         H.serverCalls.push({ name: m.params.name, fileName: m.params.arguments?.fileName, bytes: (m.params.arguments?.blob ?? "").length });

@@ -57,11 +57,20 @@ metadata and still get `draw_parts` and `open_sketcher` as ordinary tools.
 
 ### Live tools: the agent edits the open sketch
 
-The server's tools can only open the editor. To work *in* it, the mounted
-widget publishes its own tools to the model (MCP Apps app tools,
-`mcp/widget/live-tools.ts`). Each is a command sent into the editor, run by
+The editing tools (`mcp/src/live-tools.ts`) act on the editor the user has
+open. Each is a command sent into the editor, run by
 `lib/mcp/host_commands.dart` through the controller's ordinary public API, so
 it is one step on the undo stack and indistinguishable from a hand edit.
+
+They reach the model two ways, because hosts differ:
+
+- **Relayed by the local server.** Codex does not show a mounted app's own
+  tools to the model, so the plugin's stdio server offers the same tools and
+  carries each call to the open editor (`mcp/src/relay.ts`): the editor long
+  polls the server with the app-only `editor_sync` tool, runs the command it is
+  handed, and returns the result on its next poll. The relay keeps state in the
+  process, so only the local server has it; the remote HTTP server does not.
+- **Published by the widget** (MCP Apps app tools), for hosts that support it.
 
 | Group | Tools |
 | --- | --- |
@@ -69,6 +78,7 @@ it is one step on the undo stack and indistinguishable from a hand edit.
 | Geometry | `add_hole`, `move_hole`, `remove_hole`, `move_vertex`, `set_depth` |
 | Intent | `set_dimension`, `add_constraint`, `remove_constraint` |
 | Parts | `add_part`, `select_part`, `delete_part`, `replace_parts` |
+| Faces | `list_faces`, `sketch_on_face` (a boss or a cut on the top, the bottom, or a flat side) |
 | Control | `undo`, `redo`, `fit_view` |
 | Output | `export_stl` |
 
@@ -160,10 +170,10 @@ cd mcp && node e2e/fake-host.mjs ../plugin/cadsketch/dist/widget.html http://loc
 # add "allow-scripts" as a last argument to test a sandbox with no origin
 ```
 
-It checks 34 things: a file opens and is reported to the model, opening does
+It checks 41 things: a file opens and is reported to the model, opening does
 not rewrite it, a dragged vertex is saved with the right etag, the save's echo
 does not loop, an external change reloads the editor, `.dxf` is never written, a feature tree opens with its skipped features named,
-the sidebar canvas fills its container, and the live tools: the tool list, a
+the sidebar canvas fills its container, the relayed face tools (a boss on top, a cut in a side), and the live tools: the tool list, a
 hole added by tool and saved to the file, a driven dimension that keeps the
 rectangle square, constraints, undo, a helpful error, a real screenshot, and
 STL export both next to a file and as a download.

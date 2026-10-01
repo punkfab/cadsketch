@@ -13,7 +13,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { start } from "../dist/main.js";
 import { report, tessellate } from "../dist/geometry.js";
 
-const WIDGET = "ui://cadsketch/sketcher-v4.html";
+const WIDGET = "ui://cadsketch/sketcher-v5.html";
 const PLUGIN_DIR = fileURLToPath(new URL("../../plugin/cadsketch/", import.meta.url));
 
 let httpServer;
@@ -129,7 +129,8 @@ test("the bundled plugin server (stdio) is the same server", async () => {
   assert.equal(info.title, "CADSketch");
   assert.match(info.icons[0].src, /^data:image\/svg\+xml,/);
   const { tools } = await pluginClient.listTools();
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["check_parts", "draw_parts", "open_file", "open_sketcher", "save_export"]);
+  const names = tools.map((t) => t.name);
+  for (const name of ["check_parts", "draw_parts", "open_file", "open_sketcher", "save_export"]) assert.ok(names.includes(name), name);
   // save_export is for the editor, not the model.
   assert.deepEqual(tools.find((t) => t.name === "save_export")._meta.ui.visibility, ["app"]);
   const result = await pluginClient.callTool({ name: "draw_parts", arguments: { parts: [bracket] } });
@@ -219,4 +220,77 @@ test("bulge arcs: a semicircle end adds half a disc of area", () => {
 test("a self-crossing outline is flagged", () => {
   const r = report({ name: "bowtie", depth: 1, profile: [[0, 0], [10, 10], [10, 0], [0, 10]] });
   assert.ok(r.warnings.some((w) => /crosses itself/.test(w)));
+});
+
+// ---- the relay: the model's editing tools reach the open editor --------------
+
+test("the plugin server offers the editing tools to the model, and the sync tool only to the app", async () => {
+  const { tools } = await pluginClient.listTools();
+  const by = Object.fromEntries(tools.map((t) => [t.name, t]));
+  for (const name of ["get_sketch", "sketch_on_face", "list_faces", "set_dimension", "add_hole", "screenshot", "export_stl", "undo"]) {
+    assert.ok(by[name], `${name} is offered`);
+    assert.ok(by[name].description.length > 40);
+  }
+  assert.deepEqual(by.editor_sync._meta.ui.visibility, ["app"]);
+  assert.deepEqual(by.sketch_on_face.inputSchema.required.sort(), ["depth", "face", "operation"]);
+  // The remote server keeps no state between requests, so it has no relay.
+  const remote = (await client.listTools()).tools.map((t) => t.name);
+  assert.ok(!remote.includes("get_sketch") && !remote.includes("editor_sync"));
+});
+
+test("a tool call from the model is carried to the open editor and its answer carried back", async () => {
+  // Stand in for the editor: poll, run the command, reply on the next poll.
+  let reply;
+  let stop = false;
+  const seen = [];
+  const editor = (async () => {
+    while (!stop) {
+      const r = await pluginClient.callTool({ name: "editor_sync", arguments: { editor: "test-editor", visible: true, ...(reply ? { reply } : {}) } });
+      reply = undefined;
+      const command = r.structuredContent?.command;
+      if (!command) continue;
+      seen.push(command);
+      reply = { id: command.id, result: { content: [{ type: "text", text: `ran ${command.tool}` }], structuredContent: { echoed: command.args } } };
+      if (command.tool === "undo") stop = true;
+    }
+    await pluginClient.callTool({ name: "editor_sync", arguments: { editor: "test-editor", visible: false, reply } }, undefined, { timeout: 500 }).catch(() => {});
+  })();
+
+  const face = await pluginClient.callTool({
+    name: "sketch_on_face",
+    arguments: { face: { edge: 1 }, operation: "boss", depth: 5, rect: [10, 2, 0, 0], name: "tab" },
+  });
+  assert.equal(face.isError ?? false, false);
+  assert.equal(face.content[0].text, "ran sketch_on_face");
+  assert.deepEqual(face.structuredContent.echoed, { face: { edge: 1 }, operation: "boss", depth: 5, rect: [10, 2, 0, 0], name: "tab" });
+
+  const undo = await pluginClient.callTool({ name: "undo", arguments: {} });
+  assert.equal(undo.content[0].text, "ran undo");
+  assert.deepEqual(seen.map((c) => c.tool), ["sketch_on_face", "undo"]);
+  await editor;
+});
+
+test("with no editor open, an editing tool says how to open one", async () => {
+  const { EditorRelay } = await import("../dist/relay.js");
+  const relay = new EditorRelay({ waitForEditorMs: 300, answerMs: 300, staleMs: 200, holdMs: 100 });
+  const none = await relay.send("get_sketch", {});
+  assert.equal(none.isError, true);
+  assert.match(none.content[0].text, /open_sketcher/);
+
+  // An editor that stops polling is forgotten, and a call it never answers times out with a reason.
+  assert.equal(await relay.sync("gone", true), null);
+  const unanswered = await relay.send("get_sketch", {});
+  assert.match(unanswered.content[0].text, /did not answer|not open/);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.match((await relay.send("get_sketch", {})).content[0].text, /not open/);
+
+  // Two editors: the visible one gets the call.
+  const hidden = relay.sync("hidden", false);
+  const shown = relay.sync("shown", true);
+  const call = relay.send("fit_view", {});
+  const command = await shown;
+  assert.equal(command.tool, "fit_view");
+  relay.sync("shown", true, { id: command.id, result: { content: [{ type: "text", text: "ok" }] } });
+  assert.equal((await call).content[0].text, "ok");
+  assert.equal(await hidden, null);
 });

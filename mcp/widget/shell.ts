@@ -15,7 +15,7 @@
 import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
 import { OpenAIExtensions, OpenAIFileEntrypointInputSchema } from "@openai/mcp-extensions/app";
 import { canonical, fileKind, parseFile, partsFromState, serializeFile, type FilePart } from "./file-sync.js";
-import { registerLiveTools } from "./live-tools.js";
+import { registerLiveTools } from "../src/live-tools.js";
 
 const TO_HOST = "cadsketch>host:";
 const TO_APP = "cadsketch>app:";
@@ -68,7 +68,7 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let whenConnected: Promise<void> = Promise.resolve(); // set at the bottom, once connect() is called
 
 // `tools`: this app publishes its own tools to the model while it is mounted.
-const app = new App({ name: "CADSketch", version: "0.4.0" }, { tools: { listChanged: true }, availableDisplayModes: ["inline", "fullscreen"] });
+const app = new App({ name: "CADSketch", version: "0.5.0" }, { tools: { listChanged: true }, availableDisplayModes: ["inline", "fullscreen"] });
 const openai = new OpenAIExtensions(app);
 
 function setStatus(text: string) {
@@ -136,7 +136,40 @@ async function saveExport(fileName: string, base64: string): Promise<string> {
   );
 }
 
-registerLiveTools(app, { call: callEditor, saveExport });
+const handlers = registerLiveTools(app, { call: callEditor, saveExport });
+
+// The same tools, for hosts that do not show an app's own tools to the model
+// (Codex): the local plugin server offers them and hands each call to this
+// editor through a long poll (mcp/src/relay.ts). A server without the relay
+// (the remote one) refuses the first polls and the loop ends.
+async function relayLoop() {
+  const editor = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let reply: { id: number; result: unknown } | undefined;
+  let failures = 0;
+  let worked = false;
+  for (;;) {
+    const result = await app
+      .callServerTool({ name: "editor_sync", arguments: { editor, visible: document.visibilityState === "visible", ...(reply ? { reply } : {}) } })
+      .catch(() => null);
+    if (!result || result.isError) {
+      failures++;
+      if (!worked && failures >= 3) return; // no relay on this server
+      await pause(Math.min(30000, 500 * 2 ** failures)); // keep `reply` and deliver it next time
+      continue;
+    }
+    failures = 0;
+    worked = true;
+    reply = undefined;
+    const command = (result.structuredContent as { command?: { id: number; tool: string; args?: Record<string, unknown> } } | undefined)?.command;
+    if (!command) continue;
+    const run = handlers[command.tool];
+    reply = {
+      id: command.id,
+      result: run ? await run(command.args ?? {}) : { isError: true, content: [{ type: "text", text: `This editor has no tool "${command.tool}". Update the CADSketch plugin.` }] },
+    };
+  }
+}
 
 window.addEventListener("message", (event) => {
   if (event.source !== frame.contentWindow) return;
@@ -423,4 +456,5 @@ whenConnected = app.connect().then(() => {
     reportState(pendingState);
     pendingState = null;
   }
+  void relayLoop();
 });

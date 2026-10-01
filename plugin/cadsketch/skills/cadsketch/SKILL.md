@@ -1,6 +1,6 @@
 ---
 name: cadsketch
-description: Design flat, extruded mechanical parts (plates, brackets, gaskets, spacers, panels) with the user in the CADSketch editor. Draw parts, edit the open sketch in place (move vertices, add and move holes, set driving dimensions, add constraints, undo), look at it with a screenshot, export STL, write and edit .cadsketch files, open .dxf and featuretree .ir.json files, and review what the user has sketched. Use for any request to design, draw, sketch, model, dimension, change or review a part that is a 2D outline with holes, extruded to a thickness.
+description: Design flat, extruded mechanical parts (plates, brackets, gaskets, spacers, panels) with the user in the CADSketch editor. Draw parts, edit the open sketch in place (move vertices, add and move holes, set driving dimensions, add constraints, undo), look at it with a screenshot, add bosses and pockets on faces, export STL, write and edit .cadsketch files, open .dxf and featuretree .ir.json files, and review what the user has sketched. Use for any request to design, draw, sketch, model, dimension, change or review a part that is a 2D outline with holes, extruded to a thickness.
 ---
 
 # CADSketch
@@ -51,7 +51,8 @@ user sees it happen.
 | move a corner | `move_vertex` |
 | make an edge an exact length | `set_dimension` (`length: null` removes it) |
 | lock in design intent | `add_constraint` (horizontal, vertical, parallel, perpendicular, equal), `remove_constraint` |
-| change thickness | `set_depth` |
+| add a boss or a pocket on a face | `sketch_on_face` (see below), `list_faces` |
+| change thickness, or a feature's depth | `set_depth` |
 | add, select or delete a part | `add_part`, `select_part`, `delete_part` |
 | start over | `replace_parts` |
 | step back | `undo`, `redo` |
@@ -80,9 +81,38 @@ Things worth knowing:
   machine and a `.cadsketch` file is open, it is saved next to that file and
   you get the path. Otherwise the app offers it as a download.
 
-These tools exist only while the editor is open. If they are not available,
-open it (`open_sketcher`, or have the user open the `.cadsketch` file) or work
-through the file as described below.
+### Features on faces
+
+A part is one outline extruded to a thickness. Anything more (a mounting boss, a
+counterbore, a recess, a tab on an edge, a port in a side) is a feature sketched
+on one of its faces with `sketch_on_face`:
+
+- `face`: `"top"`, `"bottom"`, or `{"edge": i}` for the flat side along profile
+  edge `i`.
+- `operation`: `"boss"` adds material outward, `"cut"` removes it inward, both
+  `depth` mm.
+- One shape: `rect` `[width, height, cx, cy]`, `circle` `[cx, cy, r]`, or
+  `profile`.
+- On the top and bottom, coordinates are the part's own x and y: a boss at
+  `[20, 10]` sits over the outline's `[20, 10]`. On a side, the origin is the
+  middle of that face, x runs along it and y runs up the thickness; call
+  `list_faces` first to get each side's size and direction.
+
+The feature becomes a part of its own (the result gives its name), listed by
+`get_sketch` with `featureOf`, `operation` and `face`. Change it with the usual
+tools addressed to that name (`set_depth`, `move_vertex`, `set_dimension`,
+`delete_part`). A through hole is still `add_hole` on the body, not a cut.
+Read the result's warning: it says when the shape landed off the face.
+
+Limits to tell the user about rather than work around: features go on the body,
+not on other features; the 3D view shows a cut as a red outline rather than
+removing the material; and a `.cadsketch` file holds bodies and holes only, so
+a canvas with face features is not saved back to its file.
+
+The editing tools act on the editor that is open. If one answers that the
+editor is not open, open it (`open_sketcher`, or have the user open the
+`.cadsketch` file), then call it again, or work through the file as described
+below.
 
 ## Other ways to work
 

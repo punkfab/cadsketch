@@ -187,6 +187,18 @@ List<PartSpec> partSpecsFromJson(Object? json) {
   return [for (final p in json) PartSpec.fromJson(p)];
 }
 
+/// Whether [part]'s sketch is drawn Y-down against the coordinates a host uses
+/// (millimetres, Y up). True for everything except a feature on a bottom face,
+/// whose plane already runs its v axis along the part's own +Y.
+bool sketchFlipsY(Part part) =>
+    !(part.referenceLoop != null && part.plane.normal.z < -0.5);
+
+/// Which face of its parent a feature sits on: "top", "bottom" or "side".
+String faceOf(Part part) {
+  final z = part.plane.normal.z;
+  return z > 0.5 ? 'top' : z < -0.5 ? 'bottom' : 'side';
+}
+
 /// One part as the model sees it. Geometry comes from [partToIr], the same
 /// inference the featuretree export uses, so only real features are reported:
 /// a closed profile, its extrude depth, and the circles that are actually holes.
@@ -216,6 +228,20 @@ Map<String, dynamic> partToSpecJson(Part part) {
     }
   }
 
+  // A feature on the BOTTOM face is sketched looking up at it: its sketch Y is
+  // already the part's Y, where every other sketch is drawn Y-down. Report it
+  // in the same part coordinates as a top feature.
+  if (!sketchFlipsY(part)) {
+    List<dynamic> up(List<dynamic> v) =>
+        [v[0], -(v[1] as num), for (final b in v.skip(2)) -(b as num)];
+    profile = profile == null ? null : [for (final v in profile) up(v as List)];
+    List<dynamic> circleUp(List<dynamic> c) => [c[0], -(c[1] as num), c[2]];
+    circle = circle == null ? null : circleUp(circle);
+    for (var i = 0; i < holes.length; i++) {
+      holes[i] = circleUp(holes[i] as List);
+    }
+  }
+
   final s = part.sketch;
   final kinds = <String, int>{};
   for (final c in s.constraints) {
@@ -237,6 +263,7 @@ Map<String, dynamic> partToSpecJson(Part part) {
     'dimensionedSegments': dimensioned,
     if (part.parent != null) 'featureOf': part.parent!.name,
     if (part.parent != null) 'operation': part.operation.name,
+    if (part.parent != null) 'face': faceOf(part),
     if (part.importedSolid != null) 'importedMesh': true,
   };
 }

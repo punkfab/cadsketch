@@ -470,9 +470,9 @@ var require_codegen = __commonJS({
       }
     };
     var Throw = class extends Node {
-      constructor(error62) {
+      constructor(error63) {
         super();
-        this.error = error62;
+        this.error = error63;
       }
       render({ _n }) {
         return `throw ${this.error};` + _n;
@@ -709,9 +709,9 @@ var require_codegen = __commonJS({
       }
     };
     var Catch = class extends BlockNode {
-      constructor(error62) {
+      constructor(error63) {
         super();
-        this.error = error62;
+        this.error = error63;
       }
       render(opts) {
         return `catch(${this.error})` + super.render(opts);
@@ -902,9 +902,9 @@ var require_codegen = __commonJS({
         this._blockNode(node2);
         this.code(tryBody);
         if (catchCode) {
-          const error62 = this.name("e");
-          this._currNode = node2.catch = new Catch(error62);
-          catchCode(error62);
+          const error63 = this.name("e");
+          this._currNode = node2.catch = new Catch(error63);
+          catchCode(error63);
         }
         if (finallyCode) {
           this._currNode = node2.finally = new Finally();
@@ -913,8 +913,8 @@ var require_codegen = __commonJS({
         return this._endBlockNode(Catch, Finally);
       }
       // `throw` statement
-      throw(error62) {
-        return this._leafNode(new Throw(error62));
+      throw(error63) {
+        return this._leafNode(new Throw(error63));
       }
       // start self-balancing block
       block(body, nodeCount) {
@@ -1270,10 +1270,10 @@ var require_errors = __commonJS({
     exports.keyword$DataError = {
       message: ({ keyword, schemaType }) => schemaType ? (0, codegen_1.str)`"${keyword}" keyword must be ${schemaType} ($data)` : (0, codegen_1.str)`"${keyword}" keyword is invalid ($data)`
     };
-    function reportError(cxt, error62 = exports.keywordError, errorPaths, overrideAllErrors) {
+    function reportError(cxt, error63 = exports.keywordError, errorPaths, overrideAllErrors) {
       const { it } = cxt;
       const { gen, compositeRule, allErrors } = it;
-      const errObj = errorObjectCode(cxt, error62, errorPaths);
+      const errObj = errorObjectCode(cxt, error63, errorPaths);
       if (overrideAllErrors !== null && overrideAllErrors !== void 0 ? overrideAllErrors : compositeRule || allErrors) {
         addError(gen, errObj);
       } else {
@@ -1281,10 +1281,10 @@ var require_errors = __commonJS({
       }
     }
     exports.reportError = reportError;
-    function reportExtraError(cxt, error62 = exports.keywordError, errorPaths) {
+    function reportExtraError(cxt, error63 = exports.keywordError, errorPaths) {
       const { it } = cxt;
       const { gen, compositeRule, allErrors } = it;
-      const errObj = errorObjectCode(cxt, error62, errorPaths);
+      const errObj = errorObjectCode(cxt, error63, errorPaths);
       addError(gen, errObj);
       if (!(compositeRule || allErrors)) {
         returnErrors(it, names_1.default.vErrors);
@@ -1335,19 +1335,19 @@ var require_errors = __commonJS({
       schema: new codegen_1.Name("schema"),
       parentSchema: new codegen_1.Name("parentSchema")
     };
-    function errorObjectCode(cxt, error62, errorPaths) {
+    function errorObjectCode(cxt, error63, errorPaths) {
       const { createErrors } = cxt.it;
       if (createErrors === false)
         return (0, codegen_1._)`{}`;
-      return errorObject(cxt, error62, errorPaths);
+      return errorObject(cxt, error63, errorPaths);
     }
-    function errorObject(cxt, error62, errorPaths = {}) {
+    function errorObject(cxt, error63, errorPaths = {}) {
       const { gen, it } = cxt;
       const keyValues = [
         errorInstancePath(it, errorPaths),
         errorSchemaPath(cxt, errorPaths)
       ];
-      extraErrorProps(cxt, error62, keyValues);
+      extraErrorProps(cxt, error63, keyValues);
       return gen.object(...keyValues);
     }
     function errorInstancePath({ errorPath }, { instancePath }) {
@@ -3055,15 +3055,15 @@ var require_compile = __commonJS({
       var _a3;
       if (((_a3 = parsedRef.fragment) === null || _a3 === void 0 ? void 0 : _a3[0]) !== "/")
         return;
-      for (const part2 of parsedRef.fragment.slice(1).split("/")) {
+      for (const part3 of parsedRef.fragment.slice(1).split("/")) {
         if (typeof schema === "boolean")
           return;
-        const partSchema = schema[(0, util_1.unescapeFragment)(part2)];
+        const partSchema = schema[(0, util_1.unescapeFragment)(part3)];
         if (partSchema === void 0)
           return;
         schema = partSchema;
         const schId = typeof schema === "object" && schema[this.opts.schemaId];
-        if (!PREVENT_SCOPE_CHANGE.has(part2) && schId) {
+        if (!PREVENT_SCOPE_CHANGE.has(part3) && schId) {
           baseId = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, schId);
         }
       }
@@ -3203,15 +3203,15 @@ var require_utils = __commonJS({
       const parts = left.concat(right);
       let hextetCount = 0;
       for (let i = 0; i < parts.length; i++) {
-        const part2 = parts[i];
-        if (part2 === "") return void 0;
-        if (part2.indexOf(".") !== -1) {
-          if (i !== parts.length - 1 || compression !== -1 && right.length === 0 || !isIPv4(part2)) return void 0;
+        const part3 = parts[i];
+        if (part3 === "") return void 0;
+        if (part3.indexOf(".") !== -1) {
+          if (i !== parts.length - 1 || compression !== -1 && right.length === 0 || !isIPv4(part3)) return void 0;
           hextetCount += 2;
           continue;
         }
-        if (!isHextet(part2)) return void 0;
-        parts[i] = parseInt(part2, 16).toString(16);
+        if (!isHextet(part3)) return void 0;
+        parts[i] = parseInt(part3, 16).toString(16);
         hextetCount++;
       }
       if (compression === -1) {
@@ -5012,7 +5012,7 @@ var require_limitNumber = __commonJS({
       exclusiveMaximum: { okStr: "<", ok: ops.LT, fail: ops.GTE },
       exclusiveMinimum: { okStr: ">", ok: ops.GT, fail: ops.LTE }
     };
-    var error62 = {
+    var error63 = {
       message: ({ keyword, schemaCode }) => (0, codegen_1.str)`must be ${KWDs[keyword].okStr} ${schemaCode}`,
       params: ({ keyword, schemaCode }) => (0, codegen_1._)`{comparison: ${KWDs[keyword].okStr}, limit: ${schemaCode}}`
     };
@@ -5021,7 +5021,7 @@ var require_limitNumber = __commonJS({
       type: "number",
       schemaType: "number",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { keyword, data, schemaCode } = cxt;
         cxt.fail$data((0, codegen_1._)`${data} ${KWDs[keyword].fail} ${schemaCode} || isNaN(${data})`);
@@ -5037,7 +5037,7 @@ var require_multipleOf = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
-    var error62 = {
+    var error63 = {
       message: ({ schemaCode }) => (0, codegen_1.str)`must be multiple of ${schemaCode}`,
       params: ({ schemaCode }) => (0, codegen_1._)`{multipleOf: ${schemaCode}}`
     };
@@ -5046,7 +5046,7 @@ var require_multipleOf = __commonJS({
       type: "number",
       schemaType: "number",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, data, schemaCode, it } = cxt;
         const prec = it.opts.multipleOfPrecision;
@@ -5093,7 +5093,7 @@ var require_limitLength = __commonJS({
     var codegen_1 = require_codegen();
     var util_1 = require_util();
     var ucs2length_1 = require_ucs2length();
-    var error62 = {
+    var error63 = {
       message({ keyword, schemaCode }) {
         const comp = keyword === "maxLength" ? "more" : "fewer";
         return (0, codegen_1.str)`must NOT have ${comp} than ${schemaCode} characters`;
@@ -5105,7 +5105,7 @@ var require_limitLength = __commonJS({
       type: "string",
       schemaType: "number",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { keyword, data, schemaCode, it } = cxt;
         const op = keyword === "maxLength" ? codegen_1.operators.GT : codegen_1.operators.LT;
@@ -5125,7 +5125,7 @@ var require_pattern = __commonJS({
     var code_1 = require_code2();
     var util_1 = require_util();
     var codegen_1 = require_codegen();
-    var error62 = {
+    var error63 = {
       message: ({ schemaCode }) => (0, codegen_1.str)`must match pattern "${schemaCode}"`,
       params: ({ schemaCode }) => (0, codegen_1._)`{pattern: ${schemaCode}}`
     };
@@ -5134,7 +5134,7 @@ var require_pattern = __commonJS({
       type: "string",
       schemaType: "string",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, data, $data, schema, schemaCode, it } = cxt;
         const u = it.opts.unicodeRegExp ? "u" : "";
@@ -5160,7 +5160,7 @@ var require_limitProperties = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
-    var error62 = {
+    var error63 = {
       message({ keyword, schemaCode }) {
         const comp = keyword === "maxProperties" ? "more" : "fewer";
         return (0, codegen_1.str)`must NOT have ${comp} than ${schemaCode} properties`;
@@ -5172,7 +5172,7 @@ var require_limitProperties = __commonJS({
       type: "object",
       schemaType: "number",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { keyword, data, schemaCode } = cxt;
         const op = keyword === "maxProperties" ? codegen_1.operators.GT : codegen_1.operators.LT;
@@ -5191,7 +5191,7 @@ var require_required = __commonJS({
     var code_1 = require_code2();
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    var error62 = {
+    var error63 = {
       message: ({ params: { missingProperty } }) => (0, codegen_1.str)`must have required property '${missingProperty}'`,
       params: ({ params: { missingProperty } }) => (0, codegen_1._)`{missingProperty: ${missingProperty}}`
     };
@@ -5200,7 +5200,7 @@ var require_required = __commonJS({
       type: "object",
       schemaType: "array",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, schema, schemaCode, data, $data, it } = cxt;
         const { opts } = it;
@@ -5271,7 +5271,7 @@ var require_limitItems = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
-    var error62 = {
+    var error63 = {
       message({ keyword, schemaCode }) {
         const comp = keyword === "maxItems" ? "more" : "fewer";
         return (0, codegen_1.str)`must NOT have ${comp} than ${schemaCode} items`;
@@ -5283,7 +5283,7 @@ var require_limitItems = __commonJS({
       type: "array",
       schemaType: "number",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { keyword, data, schemaCode } = cxt;
         const op = keyword === "maxItems" ? codegen_1.operators.GT : codegen_1.operators.LT;
@@ -5314,7 +5314,7 @@ var require_uniqueItems = __commonJS({
     var codegen_1 = require_codegen();
     var util_1 = require_util();
     var equal_1 = require_equal();
-    var error62 = {
+    var error63 = {
       message: ({ params: { i, j } }) => (0, codegen_1.str)`must NOT have duplicate items (items ## ${j} and ${i} are identical)`,
       params: ({ params: { i, j } }) => (0, codegen_1._)`{i: ${i}, j: ${j}}`
     };
@@ -5323,7 +5323,7 @@ var require_uniqueItems = __commonJS({
       type: "array",
       schemaType: "boolean",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, data, $data, schema, parentSchema, schemaCode, it } = cxt;
         if (!$data && !schema)
@@ -5380,14 +5380,14 @@ var require_const = __commonJS({
     var codegen_1 = require_codegen();
     var util_1 = require_util();
     var equal_1 = require_equal();
-    var error62 = {
+    var error63 = {
       message: "must be equal to constant",
       params: ({ schemaCode }) => (0, codegen_1._)`{allowedValue: ${schemaCode}}`
     };
     var def = {
       keyword: "const",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, data, $data, schemaCode, schema } = cxt;
         if ($data || schema && typeof schema == "object") {
@@ -5409,7 +5409,7 @@ var require_enum = __commonJS({
     var codegen_1 = require_codegen();
     var util_1 = require_util();
     var equal_1 = require_equal();
-    var error62 = {
+    var error63 = {
       message: "must be equal to one of the allowed values",
       params: ({ schemaCode }) => (0, codegen_1._)`{allowedValues: ${schemaCode}}`
     };
@@ -5417,7 +5417,7 @@ var require_enum = __commonJS({
       keyword: "enum",
       schemaType: "array",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, data, $data, schema, schemaCode, it } = cxt;
         if (!$data && schema.length === 0)
@@ -5496,7 +5496,7 @@ var require_additionalItems = __commonJS({
     exports.validateAdditionalItems = void 0;
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    var error62 = {
+    var error63 = {
       message: ({ params: { len } }) => (0, codegen_1.str)`must NOT have more than ${len} items`,
       params: ({ params: { len } }) => (0, codegen_1._)`{limit: ${len}}`
     };
@@ -5505,7 +5505,7 @@ var require_additionalItems = __commonJS({
       type: "array",
       schemaType: ["boolean", "object"],
       before: "uniqueItems",
-      error: error62,
+      error: error63,
       code(cxt) {
         const { parentSchema, it } = cxt;
         const { items } = parentSchema;
@@ -5624,7 +5624,7 @@ var require_items2020 = __commonJS({
     var util_1 = require_util();
     var code_1 = require_code2();
     var additionalItems_1 = require_additionalItems();
-    var error62 = {
+    var error63 = {
       message: ({ params: { len } }) => (0, codegen_1.str)`must NOT have more than ${len} items`,
       params: ({ params: { len } }) => (0, codegen_1._)`{limit: ${len}}`
     };
@@ -5633,7 +5633,7 @@ var require_items2020 = __commonJS({
       type: "array",
       schemaType: ["object", "boolean"],
       before: "uniqueItems",
-      error: error62,
+      error: error63,
       code(cxt) {
         const { schema, parentSchema, it } = cxt;
         const { prefixItems } = parentSchema;
@@ -5657,7 +5657,7 @@ var require_contains = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    var error62 = {
+    var error63 = {
       message: ({ params: { min, max } }) => max === void 0 ? (0, codegen_1.str)`must contain at least ${min} valid item(s)` : (0, codegen_1.str)`must contain at least ${min} and no more than ${max} valid item(s)`,
       params: ({ params: { min, max } }) => max === void 0 ? (0, codegen_1._)`{minContains: ${min}}` : (0, codegen_1._)`{minContains: ${min}, maxContains: ${max}}`
     };
@@ -5667,7 +5667,7 @@ var require_contains = __commonJS({
       schemaType: ["object", "boolean"],
       before: "uniqueItems",
       trackErrors: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, schema, parentSchema, data, it } = cxt;
         let min;
@@ -5845,7 +5845,7 @@ var require_propertyNames = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    var error62 = {
+    var error63 = {
       message: "property name must be valid",
       params: ({ params }) => (0, codegen_1._)`{propertyName: ${params.propertyName}}`
     };
@@ -5853,7 +5853,7 @@ var require_propertyNames = __commonJS({
       keyword: "propertyNames",
       type: "object",
       schemaType: ["object", "boolean"],
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, schema, data, it } = cxt;
         if ((0, util_1.alwaysValidSchema)(it, schema))
@@ -5890,7 +5890,7 @@ var require_additionalProperties = __commonJS({
     var codegen_1 = require_codegen();
     var names_1 = require_names();
     var util_1 = require_util();
-    var error62 = {
+    var error63 = {
       message: "must NOT have additional properties",
       params: ({ params }) => (0, codegen_1._)`{additionalProperty: ${params.additionalProperty}}`
     };
@@ -5900,7 +5900,7 @@ var require_additionalProperties = __commonJS({
       schemaType: ["boolean", "object"],
       allowUndefined: true,
       trackErrors: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, schema, parentSchema, data, errsCount, it } = cxt;
         if (!errsCount)
@@ -6174,7 +6174,7 @@ var require_oneOf = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    var error62 = {
+    var error63 = {
       message: "must match exactly one schema in oneOf",
       params: ({ params }) => (0, codegen_1._)`{passingSchemas: ${params.passing}}`
     };
@@ -6182,7 +6182,7 @@ var require_oneOf = __commonJS({
       keyword: "oneOf",
       schemaType: "array",
       trackErrors: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, schema, parentSchema, it } = cxt;
         if (!Array.isArray(schema))
@@ -6259,7 +6259,7 @@ var require_if = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    var error62 = {
+    var error63 = {
       message: ({ params }) => (0, codegen_1.str)`must match "${params.ifClause}" schema`,
       params: ({ params }) => (0, codegen_1._)`{failingKeyword: ${params.ifClause}}`
     };
@@ -6267,7 +6267,7 @@ var require_if = __commonJS({
       keyword: "if",
       schemaType: ["object", "boolean"],
       trackErrors: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, parentSchema, it } = cxt;
         if (parentSchema.then === void 0 && parentSchema.else === void 0) {
@@ -6393,7 +6393,7 @@ var require_format = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
-    var error62 = {
+    var error63 = {
       message: ({ schemaCode }) => (0, codegen_1.str)`must match format "${schemaCode}"`,
       params: ({ schemaCode }) => (0, codegen_1._)`{format: ${schemaCode}}`
     };
@@ -6402,7 +6402,7 @@ var require_format = __commonJS({
       type: ["number", "string"],
       schemaType: "string",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt, ruleType) {
         const { gen, data, $data, schema, schemaCode, it } = cxt;
         const { opts, errSchemaPath, schemaEnv, self } = it;
@@ -6557,7 +6557,7 @@ var require_discriminator = __commonJS({
     var compile_1 = require_compile();
     var ref_error_1 = require_ref_error();
     var util_1 = require_util();
-    var error62 = {
+    var error63 = {
       message: ({ params: { discrError, tagName } }) => discrError === types_1.DiscrError.Tag ? `tag "${tagName}" must be string` : `value of tag "${tagName}" must be in oneOf`,
       params: ({ params: { discrError, tag, tagName } }) => (0, codegen_1._)`{error: ${discrError}, tag: ${tagName}, tagValue: ${tag}}`
     };
@@ -6565,7 +6565,7 @@ var require_discriminator = __commonJS({
       keyword: "discriminator",
       type: "object",
       schemaType: "object",
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, data, schema, parentSchema, it } = cxt;
         const { oneOf } = parentSchema;
@@ -7097,7 +7097,7 @@ var require_limit = __commonJS({
       formatExclusiveMaximum: { okStr: "<", ok: ops.LT, fail: ops.GTE },
       formatExclusiveMinimum: { okStr: ">", ok: ops.GT, fail: ops.LTE }
     };
-    var error62 = {
+    var error63 = {
       message: ({ keyword, schemaCode }) => (0, codegen_1.str)`should be ${KWDs[keyword].okStr} ${schemaCode}`,
       params: ({ keyword, schemaCode }) => (0, codegen_1._)`{comparison: ${KWDs[keyword].okStr}, limit: ${schemaCode}}`
     };
@@ -7106,7 +7106,7 @@ var require_limit = __commonJS({
       type: "string",
       schemaType: "string",
       $data: true,
-      error: error62,
+      error: error63,
       code(cxt) {
         const { gen, data, schemaCode, keyword, it } = cxt;
         const { opts, self } = it;
@@ -8798,10 +8798,10 @@ function node(obj, key, make) {
   }
   return obj[key];
 }
-function flattenError(error62, mapper = (issue2) => issue2.message) {
+function flattenError(error63, mapper = (issue2) => issue2.message) {
   const fieldErrors = {};
   const formErrors = [];
-  for (const sub of error62.issues) {
+  for (const sub of error63.issues) {
     if (sub.path.length > 0) {
       node(fieldErrors, sub.path[0], () => []).push(mapper(sub));
     } else {
@@ -8810,10 +8810,10 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
   }
   return { formErrors, fieldErrors };
 }
-function formatError(error62, mapper = (issue2) => issue2.message) {
+function formatError(error63, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path2 = []) => {
-    for (const issue2 of error63.issues) {
+  const processError = (error64, path2 = []) => {
+    for (const issue2 of error64.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
         issue2.errors.map((issues) => processError({ issues }, [...path2, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
@@ -8855,14 +8855,14 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
       }
     }
   };
-  processError(error62);
+  processError(error63);
   return fieldErrors;
 }
-function treeifyError(error62, mapper = (issue2) => issue2.message) {
+function treeifyError(error63, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path2 = []) => {
+  const processError = (error64, path2 = []) => {
     var _a3;
-    for (const issue2 of error63.issues) {
+    for (const issue2 of error64.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
         issue2.errors.map((issues) => processError({ issues }, [...path2, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
@@ -8904,7 +8904,7 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
       }
     }
   };
-  processError(error62);
+  processError(error63);
   return result;
 }
 function toDotPath(_path) {
@@ -8925,9 +8925,9 @@ function toDotPath(_path) {
   }
   return segs.join("");
 }
-function prettifyError(error62) {
+function prettifyError(error63) {
   const lines = [];
-  const issues = [...error62.issues].sort((a, b) => (a.path ?? []).length - (b.path ?? []).length);
+  const issues = [...error63.issues].sort((a, b) => (a.path ?? []).length - (b.path ?? []).length);
   for (const issue2 of issues) {
     lines.push(`\u2716 ${issue2.message}`);
     if (issue2.path?.length)
@@ -8983,19 +8983,19 @@ var _safeParse = (_Err) => (schema, value, _ctx) => {
 };
 var safeParse = /* @__PURE__ */ _safeParse($ZodRealError);
 function failure(Err, issues, ctx) {
-  let error62;
+  let error63;
   return {
     success: false,
     get error() {
-      if (!error62) {
-        error62 = new Err(issues.map((iss) => finalizeIssue(iss, ctx, config())));
+      if (!error63) {
+        error63 = new Err(issues.map((iss) => finalizeIssue(iss, ctx, config())));
         issues = void 0;
         ctx = void 0;
       }
-      return error62;
+      return error63;
     },
     set error(e) {
-      error62 = e;
+      error63 = e;
       issues = void 0;
       ctx = void 0;
     }
@@ -12034,17 +12034,17 @@ function partPattern(schema) {
 var $ZodTemplateLiteral = /* @__PURE__ */ $constructor("$ZodTemplateLiteral", (inst, def) => {
   $ZodType.init(inst, def);
   const regexParts = [];
-  for (const part2 of def.parts) {
-    if (typeof part2 === "object" && part2 !== null) {
-      const source = partPattern(part2);
+  for (const part3 of def.parts) {
+    if (typeof part3 === "object" && part3 !== null) {
+      const source = partPattern(part3);
       if (!source) {
-        throw new Error(`Invalid template literal part, no pattern found: ${[...part2._zod.traits].shift()}`);
+        throw new Error(`Invalid template literal part, no pattern found: ${[...part3._zod.traits].shift()}`);
       }
       regexParts.push(cleanRegex(source));
-    } else if (part2 === null || primitiveTypes.has(typeof part2)) {
-      regexParts.push(escapeRegex(`${part2}`));
+    } else if (part3 === null || primitiveTypes.has(typeof part3)) {
+      regexParts.push(escapeRegex(`${part3}`));
     } else {
-      throw new Error(`Invalid template literal part: ${part2}`);
+      throw new Error(`Invalid template literal part: ${part3}`);
     }
   }
   inst._zod.pattern = new RegExp(`^${regexParts.join("")}$`);
@@ -23008,11 +23008,11 @@ function foldObjects(members2) {
         continue;
       const parts = [];
       for (const other of objects) {
-        const part2 = other.properties?.[key] ?? undeclaredConstraint(other);
-        if (part2 === null || part2 === void 0)
+        const part3 = other.properties?.[key] ?? undeclaredConstraint(other);
+        if (part3 === null || part3 === void 0)
           continue;
-        if (!parts.some((seen) => JSON.stringify(seen) === JSON.stringify(part2)))
-          parts.push(part2);
+        if (!parts.some((seen) => JSON.stringify(seen) === JSON.stringify(part3)))
+          parts.push(part3);
       }
       const merged = parts.length === 1 ? parts[0] : foldObjects(parts) ?? { allOf: parts };
       assignProp(properties, key, merged);
@@ -28445,14 +28445,14 @@ var StdioServerTransport = class {
       try {
         this._readBuffer.append(chunk);
         this.processReadBuffer();
-      } catch (error62) {
-        this.onerror?.(error62);
+      } catch (error63) {
+        this.onerror?.(error63);
         this.close().catch(() => {
         });
       }
     };
-    this._onerror = (error62) => {
-      this.onerror?.(error62);
+    this._onerror = (error63) => {
+      this.onerror?.(error63);
     };
     this._readBuffer = new ReadBuffer({ maxBufferSize: options?.maxBufferSize });
   }
@@ -28475,8 +28475,8 @@ var StdioServerTransport = class {
           break;
         }
         this.onmessage?.(message);
-      } catch (error62) {
-        this.onerror?.(error62);
+      } catch (error63) {
+        this.onerror?.(error63);
       }
     }
   }
@@ -28692,8 +28692,8 @@ var ZodError2 = class _ZodError extends Error {
       return issue2.message;
     };
     const fieldErrors = { _errors: [] };
-    const processError = (error62) => {
-      for (const issue2 of error62.issues) {
+    const processError = (error63) => {
+      for (const issue2 of error63.issues) {
         if (issue2.code === "invalid_union") {
           issue2.unionErrors.map(processError);
         } else if (issue2.code === "invalid_return_type") {
@@ -28771,8 +28771,8 @@ var ZodError2 = class _ZodError extends Error {
   }
 };
 ZodError2.create = (issues) => {
-  const error62 = new ZodError2(issues);
-  return error62;
+  const error63 = new ZodError2(issues);
+  return error63;
 };
 
 // node_modules/zod/v3/locales/en.js
@@ -29032,8 +29032,8 @@ var handleResult = (ctx, result) => {
       get error() {
         if (this._error)
           return this._error;
-        const error62 = new ZodError2(ctx.common.issues);
-        this._error = error62;
+        const error63 = new ZodError2(ctx.common.issues);
+        this._error = error63;
         return this._error;
       }
     };
@@ -31692,25 +31692,25 @@ var ZodFunction2 = class _ZodFunction extends ZodType2 {
       });
       return INVALID2;
     }
-    function makeArgsIssue(args, error62) {
+    function makeArgsIssue(args, error63) {
       return makeIssue({
         data: args,
         path: ctx.path,
         errorMaps: [ctx.common.contextualErrorMap, ctx.schemaErrorMap, getErrorMap2(), en_default2].filter((x) => !!x),
         issueData: {
           code: ZodIssueCode2.invalid_arguments,
-          argumentsError: error62
+          argumentsError: error63
         }
       });
     }
-    function makeReturnsIssue(returns, error62) {
+    function makeReturnsIssue(returns, error63) {
       return makeIssue({
         data: returns,
         path: ctx.path,
         errorMaps: [ctx.common.contextualErrorMap, ctx.schemaErrorMap, getErrorMap2(), en_default2].filter((x) => !!x),
         issueData: {
           code: ZodIssueCode2.invalid_return_type,
-          returnTypeError: error62
+          returnTypeError: error63
         }
       });
     }
@@ -31719,15 +31719,15 @@ var ZodFunction2 = class _ZodFunction extends ZodType2 {
     if (this._def.returns instanceof ZodPromise2) {
       const me = this;
       return OK(async function(...args) {
-        const error62 = new ZodError2([]);
+        const error63 = new ZodError2([]);
         const parsedArgs = await me._def.args.parseAsync(args, params).catch((e) => {
-          error62.addIssue(makeArgsIssue(args, e));
-          throw error62;
+          error63.addIssue(makeArgsIssue(args, e));
+          throw error63;
         });
         const result = await Reflect.apply(fn, this, parsedArgs);
         const parsedReturns = await me._def.returns._def.type.parseAsync(result, params).catch((e) => {
-          error62.addIssue(makeReturnsIssue(result, e));
-          throw error62;
+          error63.addIssue(makeReturnsIssue(result, e));
+          throw error63;
         });
         return parsedReturns;
       });
@@ -32572,26 +32572,26 @@ function getDotPath(path2) {
     return `${acc}.${seg}`;
   }, "");
 }
-function getParseErrorMessage(error62) {
-  if (error62 && typeof error62 === "object") {
-    if ("issues" in error62 && Array.isArray(error62.issues) && error62.issues.length > 0) {
-      return error62.issues.map((i) => {
+function getParseErrorMessage(error63) {
+  if (error63 && typeof error63 === "object") {
+    if ("issues" in error63 && Array.isArray(error63.issues) && error63.issues.length > 0) {
+      return error63.issues.map((i) => {
         if (!i.path?.length) {
           return i.message;
         }
         return `${i.message} at ${getDotPath(i.path)}`;
       }).join("\n");
     }
-    if ("message" in error62 && typeof error62.message === "string") {
-      return error62.message;
+    if ("message" in error63 && typeof error63.message === "string") {
+      return error63.message;
     }
     try {
-      return JSON.stringify(error62);
+      return JSON.stringify(error63);
     } catch {
-      return String(error62);
+      return String(error63);
     }
   }
-  return String(error62);
+  return String(error63);
 }
 function getSchemaDescription(schema) {
   return schema.description;
@@ -34019,8 +34019,8 @@ var Protocol = class {
                     resolver(message);
                   } else {
                     const errorMessage = message;
-                    const error62 = new McpError(errorMessage.error.code, errorMessage.error.message, errorMessage.error.data);
-                    resolver(error62);
+                    const error63 = new McpError(errorMessage.error.code, errorMessage.error.message, errorMessage.error.data);
+                    resolver(error63);
                   }
                 } else {
                   const messageType = queuedMessage.type === "response" ? "Response" : "Error";
@@ -34064,8 +34064,8 @@ var Protocol = class {
             nextCursor,
             _meta: {}
           };
-        } catch (error62) {
-          throw new McpError(ErrorCode.InvalidParams, `Failed to list tasks: ${error62 instanceof Error ? error62.message : String(error62)}`);
+        } catch (error63) {
+          throw new McpError(ErrorCode.InvalidParams, `Failed to list tasks: ${error63 instanceof Error ? error63.message : String(error63)}`);
         }
       });
       this.setRequestHandler(CancelTaskRequestSchema, async (request, extra) => {
@@ -34087,11 +34087,11 @@ var Protocol = class {
             _meta: {},
             ...cancelledTask
           };
-        } catch (error62) {
-          if (error62 instanceof McpError) {
-            throw error62;
+        } catch (error63) {
+          if (error63 instanceof McpError) {
+            throw error63;
           }
-          throw new McpError(ErrorCode.InvalidRequest, `Failed to cancel task: ${error62 instanceof Error ? error62.message : String(error62)}`);
+          throw new McpError(ErrorCode.InvalidRequest, `Failed to cancel task: ${error63 instanceof Error ? error63.message : String(error63)}`);
         }
       });
     }
@@ -34152,9 +34152,9 @@ var Protocol = class {
       this._onclose();
     };
     const _onerror = this.transport?.onerror;
-    this._transport.onerror = (error62) => {
-      _onerror?.(error62);
-      this._onerror(error62);
+    this._transport.onerror = (error63) => {
+      _onerror?.(error63);
+      this._onerror(error63);
     };
     const _onmessage = this._transport?.onmessage;
     this._transport.onmessage = (message, extra) => {
@@ -34185,22 +34185,22 @@ var Protocol = class {
       controller.abort();
     }
     this._requestHandlerAbortControllers.clear();
-    const error62 = McpError.fromError(ErrorCode.ConnectionClosed, "Connection closed");
+    const error63 = McpError.fromError(ErrorCode.ConnectionClosed, "Connection closed");
     this._transport = void 0;
     this.onclose?.();
     for (const handler of responseHandlers.values()) {
-      handler(error62);
+      handler(error63);
     }
   }
-  _onerror(error62) {
-    this.onerror?.(error62);
+  _onerror(error63) {
+    this.onerror?.(error63);
   }
   _onnotification(notification) {
     const handler = this._notificationHandlers.get(notification.method) ?? this.fallbackNotificationHandler;
     if (handler === void 0) {
       return;
     }
-    Promise.resolve().then(() => handler(notification)).catch((error62) => this._onerror(new Error(`Uncaught error in notification handler: ${error62}`)));
+    Promise.resolve().then(() => handler(notification)).catch((error63) => this._onerror(new Error(`Uncaught error in notification handler: ${error63}`)));
   }
   _onrequest(request, extra) {
     const handler = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
@@ -34220,9 +34220,9 @@ var Protocol = class {
           type: "error",
           message: errorResponse,
           timestamp: Date.now()
-        }, capturedTransport?.sessionId).catch((error62) => this._onerror(new Error(`Failed to enqueue error response: ${error62}`)));
+        }, capturedTransport?.sessionId).catch((error63) => this._onerror(new Error(`Failed to enqueue error response: ${error63}`)));
       } else {
-        capturedTransport?.send(errorResponse).catch((error62) => this._onerror(new Error(`Failed to send an error response: ${error62}`)));
+        capturedTransport?.send(errorResponse).catch((error63) => this._onerror(new Error(`Failed to send an error response: ${error63}`)));
       }
       return;
     }
@@ -34288,7 +34288,7 @@ var Protocol = class {
       } else {
         await capturedTransport?.send(response);
       }
-    }, async (error62) => {
+    }, async (error63) => {
       if (abortController.signal.aborted) {
         return;
       }
@@ -34296,9 +34296,9 @@ var Protocol = class {
         jsonrpc: "2.0",
         id: request.id,
         error: {
-          code: Number.isSafeInteger(error62["code"]) ? error62["code"] : ErrorCode.InternalError,
-          message: error62.message ?? "Internal error",
-          ...error62["data"] !== void 0 && { data: error62["data"] }
+          code: Number.isSafeInteger(error63["code"]) ? error63["code"] : ErrorCode.InternalError,
+          message: error63.message ?? "Internal error",
+          ...error63["data"] !== void 0 && { data: error63["data"] }
         }
       };
       if (relatedTaskId && this._taskMessageQueue) {
@@ -34310,7 +34310,7 @@ var Protocol = class {
       } else {
         await capturedTransport?.send(errorResponse);
       }
-    }).catch((error62) => this._onerror(new Error(`Failed to send response: ${error62}`))).finally(() => {
+    }).catch((error63) => this._onerror(new Error(`Failed to send response: ${error63}`))).finally(() => {
       if (this._requestHandlerAbortControllers.get(request.id) === abortController) {
         this._requestHandlerAbortControllers.delete(request.id);
       }
@@ -34329,11 +34329,11 @@ var Protocol = class {
     if (timeoutInfo && responseHandler && timeoutInfo.resetTimeoutOnProgress) {
       try {
         this._resetTimeout(messageId);
-      } catch (error62) {
+      } catch (error63) {
         this._responseHandlers.delete(messageId);
         this._progressHandlers.delete(messageId);
         this._cleanupTimeout(messageId);
-        responseHandler(error62);
+        responseHandler(error63);
         return;
       }
     }
@@ -34347,8 +34347,8 @@ var Protocol = class {
       if (isJSONRPCResultResponse(response)) {
         resolver(response);
       } else {
-        const error62 = new McpError(response.error.code, response.error.message, response.error.data);
-        resolver(error62);
+        const error63 = new McpError(response.error.code, response.error.message, response.error.data);
+        resolver(error63);
       }
       return;
     }
@@ -34376,8 +34376,8 @@ var Protocol = class {
     if (isJSONRPCResultResponse(response)) {
       handler(response);
     } else {
-      const error62 = McpError.fromError(response.error.code, response.error.message, response.error.data);
-      handler(error62);
+      const error63 = McpError.fromError(response.error.code, response.error.message, response.error.data);
+      handler(error63);
     }
   }
   get transport() {
@@ -34422,10 +34422,10 @@ var Protocol = class {
       try {
         const result = await this.request(request, resultSchema, options);
         yield { type: "result", result };
-      } catch (error62) {
+      } catch (error63) {
         yield {
           type: "error",
-          error: error62 instanceof McpError ? error62 : new McpError(ErrorCode.InternalError, String(error62))
+          error: error63 instanceof McpError ? error63 : new McpError(ErrorCode.InternalError, String(error63))
         };
       }
       return;
@@ -34468,10 +34468,10 @@ var Protocol = class {
         await new Promise((resolve) => setTimeout(resolve, pollInterval));
         options?.signal?.throwIfAborted();
       }
-    } catch (error62) {
+    } catch (error63) {
       yield {
         type: "error",
-        error: error62 instanceof McpError ? error62 : new McpError(ErrorCode.InternalError, String(error62))
+        error: error63 instanceof McpError ? error63 : new McpError(ErrorCode.InternalError, String(error63))
       };
     }
   }
@@ -34483,8 +34483,8 @@ var Protocol = class {
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
     return new Promise((resolve, reject) => {
-      const earlyReject = (error62) => {
-        reject(error62);
+      const earlyReject = (error63) => {
+        reject(error63);
       };
       if (!this._transport) {
         earlyReject(new Error("Not connected"));
@@ -34544,9 +34544,9 @@ var Protocol = class {
             requestId: messageId,
             reason: String(reason)
           }
-        }, { relatedRequestId, resumptionToken, onresumptiontoken }).catch((error63) => this._onerror(new Error(`Failed to send cancellation: ${error63}`)));
-        const error62 = reason instanceof McpError ? reason : new McpError(ErrorCode.RequestTimeout, String(reason));
-        reject(error62);
+        }, { relatedRequestId, resumptionToken, onresumptiontoken }).catch((error64) => this._onerror(new Error(`Failed to send cancellation: ${error64}`)));
+        const error63 = reason instanceof McpError ? reason : new McpError(ErrorCode.RequestTimeout, String(reason));
+        reject(error63);
       };
       this._responseHandlers.set(messageId, (response) => {
         if (options?.signal?.aborted) {
@@ -34562,8 +34562,8 @@ var Protocol = class {
           } else {
             resolve(parseResult.data);
           }
-        } catch (error62) {
-          reject(error62);
+        } catch (error63) {
+          reject(error63);
         }
       });
       options?.signal?.addEventListener("abort", () => {
@@ -34587,14 +34587,14 @@ var Protocol = class {
           type: "request",
           message: jsonrpcRequest,
           timestamp: Date.now()
-        }).catch((error62) => {
+        }).catch((error63) => {
           this._cleanupTimeout(messageId);
-          reject(error62);
+          reject(error63);
         });
       } else {
-        this._transport.send(jsonrpcRequest, { relatedRequestId, resumptionToken, onresumptiontoken }).catch((error62) => {
+        this._transport.send(jsonrpcRequest, { relatedRequestId, resumptionToken, onresumptiontoken }).catch((error63) => {
           this._cleanupTimeout(messageId);
-          reject(error62);
+          reject(error63);
         });
       }
     });
@@ -34687,7 +34687,7 @@ var Protocol = class {
             }
           };
         }
-        this._transport?.send(jsonrpcNotification2, options).catch((error62) => this._onerror(error62));
+        this._transport?.send(jsonrpcNotification2, options).catch((error63) => this._onerror(error63));
       });
       return;
     }
@@ -35540,11 +35540,11 @@ var Server = class extends Protocol {
             if (!validationResult.valid) {
               throw new McpError(ErrorCode.InvalidParams, `Elicitation response content does not match requested schema: ${validationResult.errorMessage}`);
             }
-          } catch (error62) {
-            if (error62 instanceof McpError) {
-              throw error62;
+          } catch (error63) {
+            if (error63 instanceof McpError) {
+              throw error63;
             }
-            throw new McpError(ErrorCode.InternalError, `Error validating elicitation response: ${error62 instanceof Error ? error62.message : String(error62)}`);
+            throw new McpError(ErrorCode.InternalError, `Error validating elicitation response: ${error63 instanceof Error ? error63.message : String(error63)}`);
           }
         }
         return result;
@@ -35803,13 +35803,13 @@ var McpServer = class {
         }
         await this.validateToolOutput(tool, result, request.params.name);
         return result;
-      } catch (error62) {
-        if (error62 instanceof McpError) {
-          if (error62.code === ErrorCode.UrlElicitationRequired) {
-            throw error62;
+      } catch (error63) {
+        if (error63 instanceof McpError) {
+          if (error63.code === ErrorCode.UrlElicitationRequired) {
+            throw error63;
           }
         }
-        return this.createToolError(error62 instanceof Error ? error62.message : String(error62));
+        return this.createToolError(error63 instanceof Error ? error63.message : String(error63));
       }
     });
     this._toolHandlersInitialized = true;
@@ -35842,8 +35842,8 @@ var McpServer = class {
     const schemaToParse = inputObj ?? tool.inputSchema;
     const parseResult = await safeParseAsync3(schemaToParse, args);
     if (!parseResult.success) {
-      const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage = getParseErrorMessage(error62);
+      const error63 = "error" in parseResult ? parseResult.error : "Unknown error";
+      const errorMessage = getParseErrorMessage(error63);
       throw new McpError(ErrorCode.InvalidParams, `Input validation error: Invalid arguments for tool ${toolName}: ${errorMessage}`);
     }
     return parseResult.data;
@@ -35867,8 +35867,8 @@ var McpServer = class {
     const outputObj = normalizeObjectSchema(tool.outputSchema);
     const parseResult = await safeParseAsync3(outputObj, result.structuredContent);
     if (!parseResult.success) {
-      const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
-      const errorMessage = getParseErrorMessage(error62);
+      const error63 = "error" in parseResult ? parseResult.error : "Unknown error";
+      const errorMessage = getParseErrorMessage(error63);
       throw new McpError(ErrorCode.InvalidParams, `Output validation error: Invalid structured content for tool ${toolName}: ${errorMessage}`);
     }
   }
@@ -36080,8 +36080,8 @@ var McpServer = class {
         const argsObj = normalizeObjectSchema(prompt.argsSchema);
         const parseResult = await safeParseAsync3(argsObj, request.params.arguments);
         if (!parseResult.success) {
-          const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
-          const errorMessage = getParseErrorMessage(error62);
+          const error63 = "error" in parseResult ? parseResult.error : "Unknown error";
+          const errorMessage = getParseErrorMessage(error63);
           throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage}`);
         }
         const args = parseResult.data;
@@ -36489,6 +36489,182 @@ var EMPTY_COMPLETION_RESULT = {
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
+// src/live-tools.ts
+var part = external_exports.string().optional().describe("Part name. Defaults to the active part.");
+var point = external_exports.array(external_exports.number()).length(2).describe("[x, y] in mm, X right, Y up");
+var vertexSchema = external_exports.array(external_exports.number()).min(2).max(3);
+var circleSchema = external_exports.array(external_exports.number()).length(3);
+var partSpec = external_exports.object({
+  name: external_exports.string().min(1).max(60),
+  depth: external_exports.number().positive(),
+  profile: external_exports.array(vertexSchema).min(3).optional().describe("Outline vertices [x, y] or [x, y, bulge], closed automatically"),
+  circle: circleSchema.optional().describe("[cx, cy, r] for a round body, instead of profile"),
+  holes: external_exports.array(circleSchema).optional().describe("Through holes [cx, cy, r]")
+});
+var READ = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+var EDIT = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+var COMMAND_TOOLS = [
+  {
+    name: "get_sketch",
+    title: "Read the sketch",
+    description: "Read what is on the CADSketch canvas right now: every part with its profile vertices, holes, depth, each edge's length and driving dimension, and its constraints, all with the indices the editing tools take. Call this before editing, and again whenever the user may have changed the sketch by hand.",
+    schema: external_exports.object({}),
+    annotations: READ
+  },
+  {
+    name: "replace_parts",
+    title: "Replace the canvas",
+    description: "Replace everything on the open canvas with these parts. Use for a new design or a wholesale redraw. For a small change prefer the targeted tools (move_vertex, add_hole, set_dimension), which keep the user's constraints and dimensions.",
+    schema: external_exports.object({ parts: external_exports.array(partSpec).max(20) }),
+    annotations: EDIT
+  },
+  {
+    name: "add_part",
+    title: "Add a part",
+    description: "Add one more part to the canvas, next to the existing ones, and make it the active part.",
+    schema: external_exports.object({ part: partSpec }),
+    annotations: EDIT
+  },
+  {
+    name: "delete_part",
+    title: "Delete a part",
+    description: "Delete a part and any features sketched on its faces.",
+    schema: external_exports.object({ part }),
+    annotations: { ...EDIT, destructiveHint: true }
+  },
+  {
+    name: "select_part",
+    title: "Select a part",
+    description: "Make a part the active one, so the user sees it and later commands default to it.",
+    schema: external_exports.object({ part: external_exports.string().describe("Part name") }),
+    annotations: EDIT
+  },
+  {
+    name: "set_depth",
+    title: "Set thickness",
+    description: "Set a part's extrusion thickness in mm.",
+    schema: external_exports.object({ part, depth: external_exports.number().positive() }),
+    annotations: EDIT
+  },
+  {
+    name: "add_hole",
+    title: "Add a hole",
+    description: "Add a through hole. Clearance radii: M3 1.7, M4 2.25, M5 2.75, M6 3.3. The result warns if the hole landed outside the profile.",
+    schema: external_exports.object({ part, center: point, radius: external_exports.number().positive().describe("Radius in mm") }),
+    annotations: EDIT
+  },
+  {
+    name: "move_hole",
+    title: "Move or resize a hole",
+    description: "Move a hole to a new center, change its radius, or both. `hole` is its index in the part's `holes` list.",
+    schema: external_exports.object({ part, hole: external_exports.number().int().min(0), center: point.optional(), radius: external_exports.number().positive().optional() }),
+    annotations: EDIT
+  },
+  {
+    name: "remove_hole",
+    title: "Remove a hole",
+    description: "Remove a hole by its index in the part's `holes` list. Later holes shift down by one.",
+    schema: external_exports.object({ part, hole: external_exports.number().int().min(0) }),
+    annotations: EDIT
+  },
+  {
+    name: "move_vertex",
+    title: "Move a vertex",
+    description: "Move one profile vertex to a new position. `vertex` is its index in the part's `profile`. Constraints stay in force, so neighbouring vertices may follow (a horizontal edge stays horizontal). Set release_constraints to move only this vertex.",
+    schema: external_exports.object({
+      part,
+      vertex: external_exports.number().int().min(0),
+      to: point,
+      release_constraints: external_exports.boolean().optional().describe("Drop the horizontal/vertical/parallel/perpendicular constraints on this vertex's edges first")
+    }),
+    annotations: EDIT
+  },
+  {
+    name: "set_dimension",
+    title: "Set an edge length",
+    description: "Drive an edge to an exact length in mm: the sketch re-solves so the edge is that long, and it stays that long through later edits. `edge` i runs from vertex i to vertex i+1. Pass length null to remove the driving dimension.",
+    schema: external_exports.object({ part, edge: external_exports.number().int().min(0), length: external_exports.number().positive().nullable() }),
+    annotations: EDIT
+  },
+  {
+    name: "add_constraint",
+    title: "Add a constraint",
+    description: "Constrain edges so the design keeps its intent when dimensions change. horizontal and vertical take one edge; parallel, perpendicular and equal (equal length) take two.",
+    schema: external_exports.object({
+      part,
+      kind: external_exports.enum(["horizontal", "vertical", "parallel", "perpendicular", "equal"]),
+      edges: external_exports.array(external_exports.number().int().min(0)).min(1).max(2).describe("Edge indices")
+    }),
+    annotations: EDIT
+  },
+  {
+    name: "remove_constraint",
+    title: "Remove a constraint",
+    description: "Remove a constraint by its index in the part's `constraintList` (from get_sketch).",
+    schema: external_exports.object({ part, constraint: external_exports.number().int().min(0) }),
+    annotations: EDIT
+  },
+  {
+    name: "list_faces",
+    title: "List faces",
+    description: 'List the faces of a part that a feature can be sketched on: "top", "bottom", and one flat side per straight profile edge ({"edge": i}), each with the coordinates a sketch on it uses. Call this before sketch_on_face on a side.',
+    schema: external_exports.object({ part }),
+    annotations: READ
+  },
+  {
+    name: "sketch_on_face",
+    title: "Sketch on a face",
+    description: 'Add a feature on a face of a part: a boss (adds material, extruded outward) or a cut (a pocket, extruded into the part), `depth` mm deep. Give exactly one shape: `rect` [width, height, cx, cy], `circle` [cx, cy, r], or `profile` (vertices, closed automatically). On "top" and "bottom" the shape is in the part\'s own x, y, so a boss at [20, 10] sits over the profile\'s [20, 10]. On a side ({"edge": i}) the origin is the middle of that face, x runs along it and y runs up the thickness (see list_faces). The feature becomes a part of its own, named in the result; edit it afterwards with the same tools (move_vertex, set_dimension, set_depth, delete_part). The result warns if the shape is off the face.',
+    schema: external_exports.object({
+      part: external_exports.string().optional().describe("The body to sketch on. Defaults to the active body."),
+      face: external_exports.union([external_exports.enum(["top", "bottom"]), external_exports.object({ edge: external_exports.number().int().min(0) })]).describe('"top", "bottom", or {"edge": i} for the side along profile edge i'),
+      operation: external_exports.enum(["boss", "cut"]),
+      depth: external_exports.number().positive().describe("How far the boss stands out, or how deep the cut goes, in mm"),
+      name: external_exports.string().min(1).max(60).optional().describe("Name for the feature, e.g. 'lug' or 'recess'"),
+      rect: external_exports.array(external_exports.number()).length(4).optional().describe("[width, height, cx, cy]"),
+      circle: circleSchema.optional().describe("[cx, cy, r]"),
+      profile: external_exports.array(vertexSchema).min(3).optional().describe("Vertices [x, y] or [x, y, bulge]")
+    }),
+    annotations: EDIT
+  },
+  {
+    name: "undo",
+    title: "Undo",
+    description: "Undo the last edit to the sketch, whether it was yours or the user's.",
+    schema: external_exports.object({}),
+    annotations: EDIT
+  },
+  {
+    name: "redo",
+    title: "Redo",
+    description: "Redo the edit that was just undone.",
+    schema: external_exports.object({}),
+    annotations: EDIT
+  },
+  {
+    name: "fit_view",
+    title: "Zoom to fit",
+    description: "Zoom the 2D sketch view to fit the active part. Does not change the design.",
+    schema: external_exports.object({}),
+    annotations: READ
+  }
+];
+var SCREENSHOT = {
+  name: "screenshot",
+  title: "Look at the editor",
+  description: "Get a picture of the CADSketch editor as the user sees it: the 3D view and the dimensioned 2D sketch. Use it to check your work visually, or to see what the user is pointing at.",
+  schema: external_exports.object({}),
+  annotations: READ
+};
+var EXPORT_STL = {
+  name: "export_stl",
+  title: "Export STL",
+  description: "Export a part as a binary STL for 3D printing. When a .cadsketch file is open, the STL is saved next to it and the path is returned. Otherwise the app offers it as a download.",
+  schema: external_exports.object({ part }),
+  annotations: EDIT
+};
+var LIVE_TOOLS = [...COMMAND_TOOLS, SCREENSHOT, EXPORT_STL];
+
 // src/geometry.ts
 var round = (v, d = 2) => {
   const f = 10 ** d;
@@ -36632,22 +36808,113 @@ function describe3(r) {
   Check: ${r.warnings.join(" ")}` : head;
 }
 
+// src/relay.ts
+var DEFAULTS = { holdMs: 15e3, staleMs: 4e4, waitForEditorMs: 12e3, answerMs: 6e4 };
+var error62 = (text) => ({ isError: true, content: [{ type: "text", text }] });
+var EditorRelay = class {
+  editors = /* @__PURE__ */ new Map();
+  pending = /* @__PURE__ */ new Map();
+  nextId = 1;
+  timings;
+  constructor(timings = {}) {
+    this.timings = { ...DEFAULTS, ...timings };
+  }
+  /** One poll from an editor: delivers the previous command's result, then waits for the next command. */
+  sync(id, visible, reply) {
+    const now = Date.now();
+    let editor = this.editors.get(id);
+    if (!editor) {
+      editor = { opened: now, seen: now, visible, queue: [] };
+      this.editors.set(id, editor);
+    }
+    editor.seen = now;
+    editor.visible = visible;
+    editor.waiter?.(null);
+    editor.waiter = void 0;
+    if (reply) {
+      const waiting = this.pending.get(reply.id);
+      if (waiting) {
+        this.pending.delete(reply.id);
+        clearTimeout(waiting.timer);
+        waiting.resolve(reply.result);
+      }
+    }
+    const queued = editor.queue.shift();
+    if (queued) return Promise.resolve(queued);
+    const target = editor;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (target.waiter === deliver) target.waiter = void 0;
+        target.seen = Date.now();
+        resolve(null);
+      }, this.timings.holdMs);
+      const deliver = (command) => {
+        clearTimeout(timer);
+        resolve(command);
+      };
+      target.waiter = deliver;
+    });
+  }
+  /** The editor a call should go to: one that is still polling; a visible one first, then the newest. */
+  pick() {
+    const now = Date.now();
+    let best;
+    for (const [id, editor] of this.editors) {
+      if (!editor.waiter && now - editor.seen > this.timings.staleMs) {
+        this.editors.delete(id);
+        continue;
+      }
+      if (!best || editor.visible && !best.visible || editor.visible === best.visible && editor.opened > best.opened) best = editor;
+    }
+    return best;
+  }
+  /** Runs one tool in the open editor and resolves with its result. Never rejects. */
+  async send(tool, args) {
+    const deadline = Date.now() + this.timings.waitForEditorMs;
+    let editor = this.pick();
+    while (!editor && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+      editor = this.pick();
+    }
+    if (!editor) {
+      return error62(
+        "The CADSketch editor is not open, so there is no sketch to act on. Call open_sketcher (or draw_parts to start from a design), wait for the editor to appear, then call this again."
+      );
+    }
+    const command = { id: this.nextId++, tool, args };
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(command.id);
+        resolve(error62(`The CADSketch editor did not answer "${tool}". It may have been closed; call open_sketcher and try again.`));
+      }, this.timings.answerMs);
+      this.pending.set(command.id, { resolve, timer });
+      if (editor.waiter) {
+        const deliver = editor.waiter;
+        editor.waiter = void 0;
+        deliver(command);
+      } else {
+        editor.queue.push(command);
+      }
+    });
+  }
+};
+
 // src/server.ts
 var APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/app/";
-var SERVER_VERSION = "0.4.0";
-var WIDGET_URI = "ui://cadsketch/sketcher-v4.html";
-var LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
+var SERVER_VERSION = "0.5.0";
+var WIDGET_URI = "ui://cadsketch/sketcher-v5.html";
+var LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v4.html", "ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
 var FILE_EXTENSIONS = [".cadsketch", ".dxf", ".ir.json"];
 var vertex = external_exports.array(external_exports.number()).min(2).max(3).describe("[x, y] or [x, y, bulge]. bulge = tan(theta/4) of the arc from this vertex to the next; positive bulges counter-clockwise, 1 is a semicircle, 0 or omitted is a straight edge.");
 var circle = external_exports.array(external_exports.number()).length(3).describe("[center_x, center_y, radius] in mm");
-var part = external_exports.object({
+var part2 = external_exports.object({
   name: external_exports.string().min(1).max(60).describe("Short part name, e.g. 'bracket'"),
   depth: external_exports.number().positive().max(1e5).describe("Extrusion thickness in mm"),
   profile: external_exports.array(vertex).min(3).max(2e3).optional().describe("Outer outline as vertices in order, mm, X right and Y up. Closed automatically (do not repeat the first vertex). Omit for a round part and give `circle` instead."),
   circle: circle.optional().describe("For a round part (disc, washer, spacer): the body as [cx, cy, r]. Use instead of `profile`."),
   holes: external_exports.array(circle).max(500).optional().describe("Through holes, each [cx, cy, r] in mm. Must lie inside the outline.")
 });
-var partsArg = external_exports.array(part).min(1).max(20).describe("The parts to draw. This replaces everything on the canvas.");
+var partsArg = external_exports.array(part2).min(1).max(20).describe("The parts to draw. This replaces everything on the canvas.");
 var reportShape = external_exports.object({
   name: external_exports.string(),
   width_mm: external_exports.number(),
@@ -36665,7 +36932,8 @@ var fileInput = external_exports.object({
   })
 });
 var READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
-function createServer({ widgetHtml, iconSvg, local = false }) {
+var sharedRelay;
+function createServer({ widgetHtml, iconSvg, local = false, relay: relayTimings }) {
   const icon = {
     src: "data:image/svg+xml," + encodeURIComponent(iconSvg),
     mimeType: "image/svg+xml",
@@ -36689,7 +36957,7 @@ function createServer({ widgetHtml, iconSvg, local = false }) {
       title: "Draw parts in CADSketch",
       description: "Draw one or more flat, extruded mechanical parts (plates, brackets, gaskets, spacers, enclosure panels) and open them in the CADSketch editor, where the user can drag points, dimension, extrude and export STL. Use whenever the user asks to design, draw, sketch or model a part that is a 2D outline with holes, extruded to a thickness. Units are millimetres, X right, Y up. Give real dimensions: an M3 clearance hole is r=1.7, M4 r=2.25, M5 r=2.75. To change a design, call this again with the full, updated parts list; the canvas is replaced. The user's own edits and freehand sketches are sent back to you as context, in this same format. The result reports each part's size, volume and any geometry problems; fix problems before describing the part as done.",
       inputSchema: { parts: partsArg },
-      outputSchema: { parts: external_exports.array(part), report: external_exports.array(reportShape) },
+      outputSchema: { parts: external_exports.array(part2), report: external_exports.array(reportShape) },
       annotations: READ_ONLY,
       _meta: ui()
     },
@@ -36726,7 +36994,7 @@ function createServer({ widgetHtml, iconSvg, local = false }) {
       title: "CADSketch",
       description: "Open an empty CADSketch canvas so the user can sketch a part by hand: freehand strokes snap to clean, constrained, dimensioned geometry that can be extruded. Use when the user wants to draw something themselves, or asks to open CADSketch. What they draw is sent back to you as context (parts with profile, holes and depth in mm), so you can review it or redraw an improved version with draw_parts.",
       inputSchema: {},
-      outputSchema: { parts: external_exports.array(part) },
+      outputSchema: { parts: external_exports.array(part2) },
       annotations: READ_ONLY,
       _meta: ui([{ type: "global" }, { type: "thread" }])
     },
@@ -36789,6 +37057,39 @@ function createServer({ widgetHtml, iconSvg, local = false }) {
         const target = path.join(path.dirname(openedPath), fileName);
         await writeFile(target, Buffer.from(blob, "base64"));
         return { content: [{ type: "text", text: `Saved ${target}` }], structuredContent: { path: target } };
+      }
+    );
+  }
+  if (local) {
+    const relay = relayTimings ? new EditorRelay(relayTimings) : sharedRelay ??= new EditorRelay();
+    for (const tool of LIVE_TOOLS) {
+      server2.registerTool(
+        tool.name,
+        {
+          title: tool.title,
+          description: `${tool.description} Acts on the CADSketch editor that is open (open_sketcher, draw_parts or a .cadsketch file).`,
+          inputSchema: tool.schema.shape,
+          annotations: tool.annotations
+        },
+        async (args) => relay.send(tool.name, args ?? {})
+      );
+    }
+    server2.registerTool(
+      "editor_sync",
+      {
+        title: "Editor sync",
+        description: "Used by the CADSketch editor to receive editing commands. Not for the model.",
+        inputSchema: {
+          editor: external_exports.string().min(1).max(80),
+          visible: external_exports.boolean().optional(),
+          reply: external_exports.object({ id: external_exports.number().int(), result: external_exports.record(external_exports.string(), external_exports.unknown()) }).optional()
+        },
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+        _meta: { ui: { visibility: ["app"] } }
+      },
+      async ({ editor, visible, reply }) => {
+        const command = await relay.sync(editor, visible ?? true, reply);
+        return { content: [{ type: "text", text: command ? command.tool : "idle" }], structuredContent: command ? { command } : {} };
       }
     );
   }

@@ -3,7 +3,9 @@ import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/s
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { LIVE_TOOLS } from "./live-tools.js";
 import { describe, report, structuralError, type PartInput } from "./geometry.js";
+import { EditorRelay, type RelayTimings } from "./relay.js";
 
 // CADSketch as an MCP App, with OpenAI's plugin-extension entrypoints.
 //
@@ -22,13 +24,13 @@ import { describe, report, structuralError, type PartInput } from "./geometry.js
 /** Where the CADSketch web build is served. Must be the build with the host bridge. */
 export const APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/app/";
 
-export const SERVER_VERSION = "0.4.0";
+export const SERVER_VERSION = "0.5.0";
 
 // Bump the version in the URI when the widget changes in a breaking way: hosts
 // cache the template by URI. Earlier URIs stay readable (same page) for hosts
 // holding a cached tool list.
-const WIDGET_URI = "ui://cadsketch/sketcher-v4.html";
-const LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
+const WIDGET_URI = "ui://cadsketch/sketcher-v5.html";
+const LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v4.html", "ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
 
 /** File types the editor opens from a workspace (desktop hosts). */
 export const FILE_EXTENSIONS = [".cadsketch", ".dxf", ".ir.json"];
@@ -87,9 +89,15 @@ export interface ServerOptions {
    * then does it offer tools that touch the filesystem.
    */
   local?: boolean;
+  /** Relay timings, for tests. */
+  relay?: Partial<RelayTimings>;
 }
 
-export function createServer({ widgetHtml, iconSvg, local = false }: ServerOptions): McpServer {
+// One relay per process: the model's connection and the editor's calls reach
+// the same local server process, whichever MCP session each arrives on.
+let sharedRelay: EditorRelay | undefined;
+
+export function createServer({ widgetHtml, iconSvg, local = false, relay: relayTimings }: ServerOptions): McpServer {
   const icon = {
     src: "data:image/svg+xml," + encodeURIComponent(iconSvg),
     mimeType: "image/svg+xml",
@@ -243,6 +251,44 @@ export function createServer({ widgetHtml, iconSvg, local = false }: ServerOptio
         const target = path.join(path.dirname(openedPath), fileName);
         await writeFile(target, Buffer.from(blob, "base64"));
         return { content: [{ type: "text", text: `Saved ${target}` }], structuredContent: { path: target } };
+      },
+    );
+  }
+
+  if (local) {
+    // The editing tools, relayed into the editor the user has open (relay.ts).
+    const relay = relayTimings ? new EditorRelay(relayTimings) : (sharedRelay ??= new EditorRelay());
+    for (const tool of LIVE_TOOLS) {
+      server.registerTool(
+        tool.name,
+        {
+          title: tool.title,
+          description: `${tool.description} Acts on the CADSketch editor that is open (open_sketcher, draw_parts or a .cadsketch file).`,
+          inputSchema: tool.schema.shape,
+          annotations: tool.annotations,
+        },
+        async (args: Record<string, unknown>): Promise<CallToolResult> => relay.send(tool.name, args ?? {}),
+      );
+    }
+
+    // Called by the editor, never by the model: a long poll for the next
+    // command, carrying the previous command's result.
+    server.registerTool(
+      "editor_sync",
+      {
+        title: "Editor sync",
+        description: "Used by the CADSketch editor to receive editing commands. Not for the model.",
+        inputSchema: {
+          editor: z.string().min(1).max(80),
+          visible: z.boolean().optional(),
+          reply: z.object({ id: z.number().int(), result: z.record(z.string(), z.unknown()) }).optional(),
+        },
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+        _meta: { ui: { visibility: ["app"] } },
+      },
+      async ({ editor, visible, reply }): Promise<CallToolResult> => {
+        const command = await relay.sync(editor, visible ?? true, reply as { id: number; result: CallToolResult } | undefined);
+        return { content: [{ type: "text", text: command ? command.tool : "idle" }], structuredContent: command ? { command } : {} };
       },
     );
   }

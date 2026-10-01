@@ -242,4 +242,141 @@ void main() {
     expect(() => run(SketchController(), 'undo'),
         throwsA(isA<HostCommandException>()));
   });
+
+  // --- faces ------------------------------------------------------------------
+
+  ({double minX, double maxX, double minY, double maxY, double minZ, double maxZ})
+      box(SketchController c, String name) {
+    final solid = c.parts.firstWhere((p) => p.name == name).displaySolid()!;
+    double lo(double Function(dynamic) f) =>
+        solid.vertices.map(f).reduce((a, b) => a < b ? a : b);
+    double hi(double Function(dynamic) f) =>
+        solid.vertices.map(f).reduce((a, b) => a > b ? a : b);
+    // World Y is the canvas's (down); report it Y-up like the host sees it.
+    return (
+      minX: lo((v) => v.x),
+      maxX: hi((v) => v.x),
+      minY: -hi((v) => v.y),
+      maxY: -lo((v) => v.y),
+      minZ: lo((v) => v.z),
+      maxZ: hi((v) => v.z),
+    );
+  }
+
+  test('list_faces offers the top, the bottom and each flat side', () {
+    final faces = partOf(run(plate(), 'list_faces'))['faces'] as List;
+    expect(faces.map((f) => f['face']).toList(), [
+      'top',
+      'bottom',
+      {'edge': 0},
+      {'edge': 1},
+      {'edge': 2},
+      {'edge': 3},
+    ]);
+    // Edge 0 runs along y = 0: its side faces -Y, is 80 wide and 4 high.
+    expect(faces[2]['center'], [40, 0, 2]);
+    expect(faces[2]['normal'], [0, -1, 0]);
+    expect(faces[2]['width'], 80);
+    expect(faces[2]['height'], 4);
+  });
+
+  test('a boss on the top face sits where the part coordinates say', () {
+    final c = plate();
+    final r = run(c, 'sketch_on_face', {
+      'face': 'top',
+      'operation': 'boss',
+      'depth': 6,
+      'rect': [10, 8, 60, 30],
+      'name': 'lug',
+    });
+    expect(r['warning'], isNull);
+    final part = partOf(r);
+    expect(part['featureOf'], 'plate');
+    expect(part['operation'], 'union');
+    expect(part['face'], 'top');
+    expect(part['profile'], [
+      [55, 26],
+      [65, 26],
+      [65, 34],
+      [55, 34],
+    ]);
+    final b = box(c, 'lug');
+    expect([b.minX, b.maxX, b.minY, b.maxY], [55, 65, 26, 34]);
+    expect([b.minZ, b.maxZ], [4, 10]); // on top of the 4 mm plate, 6 up
+    expect(c.active.name, 'lug');
+  });
+
+  test('a cut on the bottom face goes up into the part, same x and y', () {
+    final c = plate();
+    final r = run(c, 'sketch_on_face', {
+      'face': 'bottom',
+      'operation': 'cut',
+      'depth': 1.5,
+      'circle': [60, 30, 5],
+    });
+    final part = partOf(r);
+    expect(part['name'], 'cut');
+    expect(part['face'], 'bottom');
+    expect(part['circle'], [60, 30, 5]);
+    final b = box(c, 'cut');
+    expect(b.minX, closeTo(55, 1e-9));
+    expect(b.maxY, closeTo(35, 1e-9));
+    expect([b.minZ, b.maxZ], [0, 1.5]);
+
+    // Later edits address it in the same coordinates.
+    run(c, 'sketch_on_face', {
+      'face': 'bottom',
+      'operation': 'cut',
+      'depth': 1,
+      'rect': [10, 10, 20, 30],
+      'name': 'recess',
+    });
+    final moved = partOf(run(c, 'move_vertex',
+        {'part': 'recess', 'vertex': 0, 'to': [12, 25], 'release_constraints': true}));
+    expect((moved['profile'] as List).first, [12, 25]);
+  });
+
+  test('a boss on a side face stands out from that side', () {
+    final c = plate();
+    // Edge 1 is the x = 80 side, 40 wide and 4 high.
+    final r = run(c, 'sketch_on_face', {
+      'face': {'edge': 1},
+      'operation': 'boss',
+      'depth': 5,
+      'rect': [10, 2, 0, 0],
+      'name': 'tab',
+    });
+    expect(r['warning'], isNull);
+    expect(partOf(r)['face'], 'side');
+    final b = box(c, 'tab');
+    expect([b.minX, b.maxX], [80, 85]); // out from the side
+    expect(b.minY, closeTo(15, 1e-9)); // centred on the 40 mm edge
+    expect(b.maxY, closeTo(25, 1e-9));
+    expect(b.minZ, closeTo(1, 1e-9)); // centred in the thickness
+    expect(b.maxZ, closeTo(3, 1e-9));
+  });
+
+  test('a shape off the face is flagged, and bad faces are explained', () {
+    final c = plate();
+    final r = run(c, 'sketch_on_face', {
+      'face': 'top',
+      'operation': 'cut',
+      'depth': 1,
+      'circle': [200, 200, 3],
+    });
+    expect(r['warning'], contains('off the top face'));
+    expect(
+        () => run(c, 'sketch_on_face',
+            {'face': 'front', 'operation': 'cut', 'depth': 1, 'circle': [0, 0, 1]}),
+        throwsA(isA<HostCommandException>()
+            .having((e) => e.message, 'message', contains('"top", "bottom"'))));
+    expect(
+        () => run(c, 'sketch_on_face',
+            {'part': 'cut', 'face': 'top', 'operation': 'cut', 'depth': 1, 'circle': [0, 0, 1]}),
+        throwsA(isA<HostCommandException>()
+            .having((e) => e.message, 'message', contains('itself a feature'))));
+    // Deleting the body takes its features with it.
+    run(c, 'delete_part', {'part': 'plate'});
+    expect(c.parts.any((p) => p.name == 'cut'), isFalse);
+  });
 }

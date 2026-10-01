@@ -7,7 +7,7 @@ Puts the CADSketch editor inside the Codex / ChatGPT desktop app:
 | Sidebar | **CADSketch** opens the editor as a full tab, next to a conversation. |
 | Thread | Open the editor as a panel beside the conversation you are in. |
 | Files | `.cadsketch`, `.dxf` and featuretree `.ir.json` files in your workspace open in the editor. `.cadsketch` edits save back to the file, and the editor reloads when the agent changes it. The other two open read-only. |
-| Agent | The agent works in the sketch you have open: it reads the canvas, moves vertices, adds holes, sets driving dimensions and constraints, undoes, takes a screenshot, and exports STL. Plus `draw_parts`, and the `cadsketch` skill that teaches it the workflow. |
+| Agent | The agent works in the sketch you have open: it reads the canvas, moves vertices, adds holes, sketches bosses and pockets on faces, sets driving dimensions and constraints, undoes, takes a screenshot, and exports STL. Plus `draw_parts`, and the `cadsketch` skill that teaches it the workflow. |
 
 ## Install
 

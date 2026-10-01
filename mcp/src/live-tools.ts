@@ -35,7 +35,7 @@ const partSpec = z.object({
 const READ = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const EDIT = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 
-type ToolDef = {
+export type ToolDef = {
   name: string;
   title: string;
   description: string;
@@ -151,6 +151,34 @@ export const COMMAND_TOOLS: ToolDef[] = [
     annotations: EDIT,
   },
   {
+    name: "list_faces",
+    title: "List faces",
+    description:
+      "List the faces of a part that a feature can be sketched on: \"top\", \"bottom\", and one flat side per straight profile edge ({\"edge\": i}), each with the coordinates a sketch on it uses. Call this before sketch_on_face on a side.",
+    schema: z.object({ part }),
+    annotations: READ,
+  },
+  {
+    name: "sketch_on_face",
+    title: "Sketch on a face",
+    description:
+      "Add a feature on a face of a part: a boss (adds material, extruded outward) or a cut (a pocket, extruded into the part), `depth` mm deep. " +
+      "Give exactly one shape: `rect` [width, height, cx, cy], `circle` [cx, cy, r], or `profile` (vertices, closed automatically). " +
+      "On \"top\" and \"bottom\" the shape is in the part's own x, y, so a boss at [20, 10] sits over the profile's [20, 10]. On a side ({\"edge\": i}) the origin is the middle of that face, x runs along it and y runs up the thickness (see list_faces). " +
+      "The feature becomes a part of its own, named in the result; edit it afterwards with the same tools (move_vertex, set_dimension, set_depth, delete_part). The result warns if the shape is off the face.",
+    schema: z.object({
+      part: z.string().optional().describe("The body to sketch on. Defaults to the active body."),
+      face: z.union([z.enum(["top", "bottom"]), z.object({ edge: z.number().int().min(0) })]).describe('"top", "bottom", or {"edge": i} for the side along profile edge i'),
+      operation: z.enum(["boss", "cut"]),
+      depth: z.number().positive().describe("How far the boss stands out, or how deep the cut goes, in mm"),
+      name: z.string().min(1).max(60).optional().describe("Name for the feature, e.g. 'lug' or 'recess'"),
+      rect: z.array(z.number()).length(4).optional().describe("[width, height, cx, cy]"),
+      circle: circleSchema.optional().describe("[cx, cy, r]"),
+      profile: z.array(vertexSchema).min(3).optional().describe("Vertices [x, y] or [x, y, bulge]"),
+    }),
+    annotations: EDIT,
+  },
+  {
     name: "undo",
     title: "Undo",
     description: "Undo the last edit to the sketch, whether it was yours or the user's.",
@@ -176,7 +204,7 @@ export const COMMAND_TOOLS: ToolDef[] = [
 const text = (t: string) => ({ type: "text" as const, text: t });
 const failure = (e: unknown): CallToolResult => ({ isError: true, content: [text(e instanceof Error ? e.message : String(e))] });
 
-type Handler = (args: Record<string, unknown>) => Promise<CallToolResult>;
+export type Handler = (args: Record<string, unknown>) => Promise<CallToolResult>;
 type ToolConfig = { title: string; description: string; inputSchema: z.ZodObject; annotations: object };
 
 /** What the model reads back after a command: what happened, then the data. */
@@ -190,68 +218,73 @@ export function describeResult(value: Record<string, unknown>): string {
   return lines.join("\n");
 }
 
-export function registerLiveTools(app: App, deps: LiveToolDeps) {
+const SCREENSHOT: ToolDef = {
+  name: "screenshot",
+  title: "Look at the editor",
+  description:
+    "Get a picture of the CADSketch editor as the user sees it: the 3D view and the dimensioned 2D sketch. Use it to check your work visually, or to see what the user is pointing at.",
+  schema: z.object({}),
+  annotations: READ,
+};
+
+const EXPORT_STL: ToolDef = {
+  name: "export_stl",
+  title: "Export STL",
+  description:
+    "Export a part as a binary STL for 3D printing. When a .cadsketch file is open, the STL is saved next to it and the path is returned. Otherwise the app offers it as a download.",
+  schema: z.object({ part }),
+  annotations: EDIT,
+};
+
+/** Every tool that acts on the open editor, as the model sees it. */
+export const LIVE_TOOLS: ToolDef[] = [...COMMAND_TOOLS, SCREENSHOT, EXPORT_STL];
+
+/** What each live tool does, given a way into the editor. Shared by the tools the app publishes itself and the ones the server relays to it. */
+export function liveHandlers(deps: LiveToolDeps): Record<string, Handler> {
+  const handlers: Record<string, Handler> = {};
+  for (const tool of COMMAND_TOOLS) {
+    handlers[tool.name] = async (args) => {
+      try {
+        const value = await deps.call(tool.name, args ?? {});
+        return { content: [text(describeResult(value))], structuredContent: value };
+      } catch (e) {
+        return failure(e);
+      }
+    };
+  }
+  handlers.screenshot = async () => {
+    try {
+      const shot = await deps.call("screenshot", {});
+      return {
+        content: [
+          { type: "image" as const, data: String(shot.pngBase64), mimeType: "image/png" },
+          text(`CADSketch editor, ${shot.width} x ${shot.height} px.`),
+        ],
+      };
+    } catch (e) {
+      return failure(e);
+    }
+  };
+  handlers.export_stl = async (args) => {
+    try {
+      const out = await deps.call("export_stl", args ?? {});
+      const where = await deps.saveExport(String(out.fileName), String(out.stlBase64));
+      return { content: [text(`${out.did} ${where}`)], structuredContent: { fileName: out.fileName, triangles: out.triangles, saved: where } };
+    } catch (e) {
+      return failure(e);
+    }
+  };
+  return handlers;
+}
+
+export function registerLiveTools(app: App, deps: LiveToolDeps): Record<string, Handler> {
   // The SDK's generic signature ties the result type to an output schema; these
   // tools return plain tool results, so register through one loosely typed door.
   const register = (name: string, config: ToolConfig, handler: Handler) =>
     (app.registerTool as unknown as (name: string, config: ToolConfig, cb: Handler) => unknown).call(app, name, config, handler);
-
-  for (const tool of COMMAND_TOOLS) {
-    register(
-      tool.name,
-      { title: tool.title, description: tool.description, inputSchema: tool.schema, annotations: tool.annotations },
-      async (args) => {
-        try {
-          const value = await deps.call(tool.name, args ?? {});
-          return { content: [text(describeResult(value))], structuredContent: value };
-        } catch (e) {
-          return failure(e);
-        }
-      },
-    );
+  const handlers = liveHandlers(deps);
+  for (const tool of LIVE_TOOLS) {
+    register(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.schema, annotations: tool.annotations }, handlers[tool.name]);
   }
-
-  register(
-    "screenshot",
-    {
-      title: "Look at the editor",
-      description:
-        "Get a picture of the CADSketch editor as the user sees it: the 3D view and the dimensioned 2D sketch. Use it to check your work visually, or to see what the user is pointing at.",
-      inputSchema: z.object({}),
-      annotations: READ,
-    },
-    async () => {
-      try {
-        const shot = await deps.call("screenshot", {});
-        return {
-          content: [
-            { type: "image" as const, data: String(shot.pngBase64), mimeType: "image/png" },
-            text(`CADSketch editor, ${shot.width} x ${shot.height} px.`),
-          ],
-        };
-      } catch (e) {
-        return failure(e);
-      }
-    },
-  );
-
-  register(
-    "export_stl",
-    {
-      title: "Export STL",
-      description:
-        "Export a part as a binary STL for 3D printing. When a .cadsketch file is open, the STL is saved next to it and the path is returned. Otherwise the app offers it as a download.",
-      inputSchema: z.object({ part }),
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    },
-    async (args) => {
-      try {
-        const out = await deps.call("export_stl", args ?? {});
-        const where = await deps.saveExport(String(out.fileName), String(out.stlBase64));
-        return { content: [text(`${out.did} ${where}`)], structuredContent: { fileName: out.fileName, triangles: out.triangles, saved: where } };
-      } catch (e) {
-        return failure(e);
-      }
-    },
-  );
+  return handlers;
 }

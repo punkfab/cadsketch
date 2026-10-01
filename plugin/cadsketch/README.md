@@ -11,7 +11,7 @@ Puts the CADSketch editor inside the Codex / ChatGPT desktop app:
 
 ## Install
 
-Needs Node.js 22 or later and Codex 0.142 or later. Nothing to build: `dist/` is
+Needs Node.js 22 or later and a recent Codex (tested with 0.157). Nothing to build: `dist/` is
 committed.
 
 ```sh

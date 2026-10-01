@@ -1,33 +1,36 @@
-# DigitalOcean App Platform spec for CADSketch.
+# DigitalOcean App Platform spec for cadsketch.ai (landing + /app).
+# NOT applied automatically. To apply:
+#   doctl apps update 2c7a1f4c-0e2e-4067-b24c-37c1bbca9eaf --spec .do/app.yaml
 #
-# Serves the prebuilt static site from the `site` branch (no build step here):
-#   /     → the landing page
-#   /app  → the Flutter web app (C++ kernel compiled to WASM)
-# The `site` branch is produced by .github/workflows/web.yml on every push to
-# main; DO redeploys on push to `site`.
-#
-# Update an existing app:
-#   doctl apps update <APP_ID> --spec .do/app.yaml
-#
-# Prereqs: DO must be authorized on the (private) GitHub repo — do this once in
-# the DO console (Settings → GitHub) or you'll get a repo-access error.
+# The only difference from the spec that was live on 2026-09-30 is the CORS
+# rule: it lets any origin READ the static files. An AI chat host can sandbox
+# the embedded editor into an opaque origin, where the editor's own fetches
+# (WASM kernel, fonts) count as cross-origin and are refused without it.
+domains:
+- domain: cadsketch.ai
+  type: PRIMARY
+ingress:
+  rules:
+  - component:
+      name: cadsketch
+    match:
+      path:
+        prefix: /
+    cors:
+      allow_origins:
+      - regex: .*
+      allow_methods:
+      - GET
+      - HEAD
+      - OPTIONS
 name: cadsketch
 region: nyc
 static_sites:
-  - name: cadsketch
-    github:
-      repo: punkfab/cadsketch
-      branch: site
-      deploy_on_push: true
-    # Prebuilt by CI — served as-is from the branch root.
-    source_dir: /
-    index_document: index.html
-    catchall_document: index.html
-    routes:
-      - path: /
-# DNS stays at the registrar (no DO nameserver delegation). DO only needs a
-# record pointing cadsketch.ai at the app's ingress hostname; with no `zone`,
-# DO will not try to manage the domain's zone.
-domains:
-  - domain: cadsketch.ai
-    type: PRIMARY
+- catchall_document: index.html
+  github:
+    branch: site
+    deploy_on_push: true
+    repo: punkfab/cadsketch
+  index_document: index.html
+  name: cadsketch
+  source_dir: /

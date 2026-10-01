@@ -155,16 +155,41 @@ veilOpen.addEventListener("click", () => {
 
 // ---- start ------------------------------------------------------------------
 
+// Evidence for the failure message: did the host's policy refuse the frame, and
+// did the editor page at least load?
+let blocked: string | null = null;
+let frameLoaded = false;
+document.addEventListener("securitypolicyviolation", (e) => {
+  if (e.violatedDirective.startsWith("frame-src") || e.violatedDirective.startsWith("child-src")) {
+    blocked = e.violatedDirective;
+  }
+});
+frame.addEventListener("load", () => {
+  frameLoaded = true;
+});
+
 frame.src = appUrl.toString();
 
-// If the editor never reports in, say so plainly instead of spinning forever
-// (a host that blocks nested frames or WebAssembly lands here).
+// If the editor never reports in, say so plainly and say WHY, instead of
+// spinning forever. Three distinguishable cases:
+//   frame-blocked  the host's content policy refused the nested frame
+//   editor-stalled the page loaded but could not start (its own files were
+//                  refused: a sandbox without an origin needs CORS on the app)
+//   no-load        the page never arrived (network, or the frame was dropped)
 setTimeout(() => {
   if (editorReady) return;
-  veilText.textContent = "The editor could not start inside this chat. You can still use it in a browser tab.";
+  const reason = blocked ? "frame-blocked" : frameLoaded ? "editor-stalled" : "no-load";
+  const detail = {
+    "frame-blocked": "This chat app does not allow the embedded editor frame.",
+    "editor-stalled": "The editor page opened but could not start inside this chat's sandbox.",
+    "no-load": "The editor page did not load inside this chat.",
+  }[reason];
   (veil.querySelector("b") as HTMLElement).textContent = "CADSketch didn't load here";
+  veilText.textContent = `${detail} You can still use it in a browser tab. (${reason})`;
   veilOpen.hidden = false;
-}, 25000);
+  statusEl.textContent = `editor unavailable: ${reason}`;
+  if (connected) app.sendLog({ level: "error", data: `CADSketch editor failed to start: ${reason}${blocked ? " " + blocked : ""}` }).catch(() => {});
+}, 20000);
 
 app.connect().then(() => {
   connected = true;

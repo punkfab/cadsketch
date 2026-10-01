@@ -7,6 +7,7 @@ import 'export/stl.dart';
 import 'export/stl_export.dart';
 import 'ffi/sketch_kernel.dart';
 import 'mcp/host_bridge.dart';
+import 'mcp/host_capture.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'sketch/dxf.dart';
@@ -45,7 +46,12 @@ class AiSketcherApp extends StatelessWidget {
       title: 'CADSketch',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true),
-      home: SketchHome(controller: controller),
+      // The boundary lets an AI host capture what the user sees (see
+      // lib/mcp/host_capture.dart). It changes nothing about how the app paints.
+      home: RepaintBoundary(
+        key: hostCaptureKey,
+        child: SketchHome(controller: controller),
+      ),
     );
   }
 }

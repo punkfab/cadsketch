@@ -1,4 +1,5 @@
 import '../sketch/dxf.dart';
+import '../sketch/model.dart';
 import '../ui/sketch_canvas.dart';
 import 'part_spec.dart';
 
@@ -11,8 +12,7 @@ import 'part_spec.dart';
 void loadPartSpecs(SketchController controller, List<PartSpec> specs) {
   controller.newProject(); // back to one empty placeholder part
   for (final spec in specs) {
-    controller.importDxf(spec.name, spec.toDrawing());
-    controller.setPartDepth(controller.parts.length - 1, spec.depth);
+    importPartSpec(controller, spec);
   }
   if (specs.isNotEmpty) {
     controller.removePart(0); // drop the placeholder
@@ -21,6 +21,32 @@ void loadPartSpecs(SketchController controller, List<PartSpec> specs) {
     // frame it, or it lands in a corner of the canvas at 1 px per mm.
     controller.requestFitView();
   }
+}
+
+/// Adds one host-drawn part and makes it the active part.
+///
+/// A part given as coordinates has no design intent, so an edge driven to a new
+/// length would skew the shape. Edges drawn exactly horizontal or vertical get
+/// that constraint, which is what the app infers from a hand-drawn rectangle:
+/// "make it 95 wide" then widens the plate instead of bending it.
+void importPartSpec(SketchController controller, PartSpec spec) {
+  controller.importDxf(spec.name, spec.toDrawing());
+  controller.setPartDepth(controller.parts.length - 1, spec.depth);
+  final sketch = controller.model; // importDxf made the new part active
+  final inferred = <SketchConstraint>[];
+  for (var i = 0; i < sketch.segments.length; i++) {
+    final seg = sketch.segments[i];
+    if (seg.isArc) continue;
+    final d = sketch.points[seg.b] - sketch.points[seg.a];
+    final tolerance = 1e-9 * (d.distance + 1);
+    if (d.distance < 1e-9) continue;
+    if (d.dy.abs() <= tolerance) {
+      inferred.add(SketchConstraint(ConstraintKind.horizontal, [i]));
+    } else if (d.dx.abs() <= tolerance) {
+      inferred.add(SketchConstraint(ConstraintKind.vertical, [i]));
+    }
+  }
+  if (inferred.isNotEmpty) controller.applyConstraints(inferred);
 }
 
 /// Replaces the document with the contents of a DXF file the host opened (the

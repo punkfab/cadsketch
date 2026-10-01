@@ -3,6 +3,9 @@
 // server) and once over stdio (the bundled server a Codex plugin launches).
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -10,7 +13,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { start } from "../dist/main.js";
 import { report, tessellate } from "../dist/geometry.js";
 
-const WIDGET = "ui://cadsketch/sketcher-v3.html";
+const WIDGET = "ui://cadsketch/sketcher-v4.html";
 const PLUGIN_DIR = fileURLToPath(new URL("../../plugin/cadsketch/", import.meta.url));
 
 let httpServer;
@@ -43,8 +46,9 @@ const bracket = {
 
 test("the tools are listed and linked to the widget", async () => {
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["draw_parts", "open_file", "open_sketcher"]);
-  for (const t of tools) {
+  // The remote server offers nothing that touches a filesystem.
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["check_parts", "draw_parts", "open_file", "open_sketcher"]);
+  for (const t of tools.filter((t) => t.name !== "check_parts")) {
     assert.equal(t._meta?.ui?.resourceUri, WIDGET);
     assert.equal(t._meta?.["openai/outputTemplate"], WIDGET);
     assert.equal(t.annotations?.readOnlyHint, true);
@@ -113,7 +117,7 @@ test("the widget is a self-contained page that frames only the CADSketch app", a
   assert.deepEqual(res._meta.ui.csp.connectDomains, []);
   assert.deepEqual(res._meta["openai/ui"].availableDisplayModes, ["inline", "fullscreen"]);
   // A host with a cached tool list still asks for an older address.
-  for (const old of ["ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"]) {
+  for (const old of ["ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"]) {
     const legacy = await client.readResource({ uri: old });
     assert.equal(legacy.contents[0].text, res.text);
   }
@@ -125,11 +129,57 @@ test("the bundled plugin server (stdio) is the same server", async () => {
   assert.equal(info.title, "CADSketch");
   assert.match(info.icons[0].src, /^data:image\/svg\+xml,/);
   const { tools } = await pluginClient.listTools();
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["draw_parts", "open_file", "open_sketcher"]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["check_parts", "draw_parts", "open_file", "open_sketcher", "save_export"]);
+  // save_export is for the editor, not the model.
+  assert.deepEqual(tools.find((t) => t.name === "save_export")._meta.ui.visibility, ["app"]);
   const result = await pluginClient.callTool({ name: "draw_parts", arguments: { parts: [bracket] } });
   assert.equal(result.structuredContent.report[0].width_mm, 40);
   const { contents } = await pluginClient.readResource({ uri: WIDGET });
   assert.match(contents[0].text, /data-app-url="https:\/\/cadsketch\.ai\/app\/"/);
+});
+
+test("check_parts validates without opening the editor", async () => {
+  const ok = await client.callTool({ name: "check_parts", arguments: { parts: [bracket] } });
+  assert.equal(ok.structuredContent.report[0].width_mm, 40);
+  assert.deepEqual(ok.structuredContent.report[0].warnings, []);
+  assert.equal(ok._meta, undefined);
+  const bad = await client.callTool({ name: "check_parts", arguments: { parts: [{ ...bracket, holes: [[60, 10, 2]] }] } });
+  assert.match(bad.structuredContent.report[0].warnings.join(" "), /outside the profile/);
+});
+
+test("save_export writes only next to the file the host opened", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "cadsketch-"));
+  try {
+    const blob = Buffer.from("solid test").toString("base64");
+    // The host adds the opened file's real path; the export lands beside it.
+    const saved = await pluginClient.callTool({
+      name: "save_export",
+      arguments: { fileName: "bracket.stl", blob },
+      _meta: { "openai/resource": { path: path.join(dir, "bracket.cadsketch") } },
+    });
+    assert.ok(!saved.isError, JSON.stringify(saved.content));
+    assert.equal(saved.structuredContent.path, path.join(dir, "bracket.stl"));
+    assert.equal(await readFile(path.join(dir, "bracket.stl"), "utf8"), "solid test");
+
+    // No host-provided path: nowhere trusted to write.
+    const refused = await pluginClient.callTool({ name: "save_export", arguments: { fileName: "bracket.stl", blob } });
+    assert.equal(refused.isError, true);
+
+    // The name cannot leave the directory or change the file type.
+    for (const fileName of ["../evil.stl", "a/b.stl", "notes.txt", ".stl"]) {
+      const r = await pluginClient.callTool({
+        name: "save_export",
+        arguments: { fileName, blob },
+        _meta: { "openai/resource": { path: path.join(dir, "bracket.cadsketch") } },
+      });
+      assert.equal(r.isError, true, fileName);
+    }
+    // And the remote server does not have the tool at all.
+    const remote = await client.callTool({ name: "save_export", arguments: { fileName: "x.stl", blob } });
+    assert.equal(remote.isError, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("bulge arcs: a semicircle end adds half a disc of area", () => {

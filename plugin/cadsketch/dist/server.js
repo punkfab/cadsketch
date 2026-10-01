@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path) {
-      let input2 = path;
+    function removeDotSegments(path2) {
+      let input2 = path2;
       const output2 = [];
       let nextSlash = -1;
       let len = 0;
@@ -3669,8 +3669,8 @@ var require_schemes = __commonJS({
       }
       if (wsComponent.resourceName) {
         const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-        wsComponent.path = path && path !== "/" ? path : void 0;
+        const path2 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        wsComponent.path = path2 && path2 !== "/" ? path2 : void 0;
         wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
@@ -8015,10 +8015,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path) {
-  if (!path)
+function getElementAtPath(obj, path2) {
+  if (!path2)
     return obj;
-  return path.reduce((acc, key) => acc?.[key], obj);
+  return path2.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -8358,11 +8358,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path, issues) {
+function prefixIssues(path2, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path);
+    iss.path.unshift(path2);
     return iss;
   });
 }
@@ -8812,16 +8812,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path = []) => {
+  const processError = (error63, path2 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path2, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
       } else {
-        const fullpath = [...path, ...issue2.path];
+        const fullpath = [...path2, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -8860,17 +8860,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path = []) => {
+  const processError = (error63, path2 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path2, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
       } else {
-        const fullpath = [...path, ...issue2.path];
+        const fullpath = [...path2, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -8909,8 +8909,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path) {
+  const path2 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path2) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -26012,13 +26012,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path = ref.slice(1).split("/").filter(Boolean);
-  if (path.length === 0) {
+  const path2 = ref.slice(1).split("/").filter(Boolean);
+  if (path2.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path[0] === defsKey) {
-    const key = path[1] === void 0 ? void 0 : decodeJSONPointerSegment(path[1]);
+  if (path2[0] === defsKey) {
+    const key = path2[1] === void 0 ? void 0 : decodeJSONPointerSegment(path2[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -28886,8 +28886,8 @@ function getErrorMap2() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path, errorMaps, issueData } = params;
-  const fullPath = [...path, ...issueData.path || []];
+  const { data, path: path2, errorMaps, issueData } = params;
+  const fullPath = [...path2, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -29002,11 +29002,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path, key) {
+  constructor(parent, value, path2, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path;
+    this._path = path2;
     this._key = key;
   }
   get path() {
@@ -32558,11 +32558,11 @@ function normalizeObjectSchema(schema) {
   }
   return void 0;
 }
-function getDotPath(path) {
-  if (path.length === 0) {
+function getDotPath(path2) {
+  if (path2.length === 0) {
     return "object root";
   }
-  return path.reduce((acc, seg, index) => {
+  return path2.reduce((acc, seg, index) => {
     if (index === 0) {
       return String(seg);
     }
@@ -36485,6 +36485,10 @@ var EMPTY_COMPLETION_RESULT = {
   }
 };
 
+// src/server.ts
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+
 // src/geometry.ts
 var round = (v, d = 2) => {
   const f = 10 ** d;
@@ -36630,9 +36634,9 @@ function describe3(r) {
 
 // src/server.ts
 var APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/app/";
-var SERVER_VERSION = "0.2.0";
-var WIDGET_URI = "ui://cadsketch/sketcher-v3.html";
-var LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
+var SERVER_VERSION = "0.3.0";
+var WIDGET_URI = "ui://cadsketch/sketcher-v4.html";
+var LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
 var FILE_EXTENSIONS = [".cadsketch", ".dxf"];
 var vertex = external_exports.array(external_exports.number()).min(2).max(3).describe("[x, y] or [x, y, bulge]. bulge = tan(theta/4) of the arc from this vertex to the next; positive bulges counter-clockwise, 1 is a semicircle, 0 or omitted is a straight edge.");
 var circle = external_exports.array(external_exports.number()).length(3).describe("[center_x, center_y, radius] in mm");
@@ -36661,7 +36665,7 @@ var fileInput = external_exports.object({
   })
 });
 var READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
-function createServer({ widgetHtml, iconSvg }) {
+function createServer({ widgetHtml, iconSvg, local = false }) {
   const icon = {
     src: "data:image/svg+xml," + encodeURIComponent(iconSvg),
     mimeType: "image/svg+xml",
@@ -36745,6 +36749,49 @@ function createServer({ widgetHtml, iconSvg }) {
       structuredContent: { file: file2 }
     })
   );
+  server2.registerTool(
+    "check_parts",
+    {
+      title: "Check parts",
+      description: "Check parts without opening the editor: returns each part's size, volume and geometry warnings (a hole outside the outline, a wall under 1 mm, overlapping holes, a profile that crosses itself). Use it to validate a .cadsketch file you just wrote, or a design before drawing it. Same part format as draw_parts.",
+      inputSchema: { parts: partsArg },
+      outputSchema: { report: external_exports.array(reportShape) },
+      annotations: READ_ONLY
+    },
+    async ({ parts }) => {
+      const inputs = parts;
+      const errors = inputs.map(structuralError).filter((e) => e !== null);
+      if (errors.length) return { isError: true, content: [{ type: "text", text: errors.join(" ") }] };
+      const reports = inputs.map(report);
+      return { content: [{ type: "text", text: reports.map(describe3).join("\n") }], structuredContent: { report: reports } };
+    }
+  );
+  if (local) {
+    server2.registerTool(
+      "save_export",
+      {
+        title: "Save export",
+        description: "Save an exported STL next to the open .cadsketch file.",
+        inputSchema: {
+          fileName: external_exports.string().regex(/^[A-Za-z0-9_-]{1,80}\.stl$/, "must be a plain .stl file name"),
+          blob: external_exports.string().max(64 * 1024 * 1024).describe("Base64 file contents")
+        },
+        outputSchema: { path: external_exports.string() },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+        _meta: { ui: { visibility: ["app"] } }
+      },
+      async ({ fileName, blob }, extra) => {
+        const meta3 = extra._meta;
+        const openedPath = meta3?.["openai/resource"]?.path;
+        if (typeof openedPath !== "string" || !path.isAbsolute(openedPath)) {
+          return { isError: true, content: [{ type: "text", text: "No open workspace file to save next to." }] };
+        }
+        const target = path.join(path.dirname(openedPath), fileName);
+        await writeFile(target, Buffer.from(blob, "base64"));
+        return { content: [{ type: "text", text: `Saved ${target}` }], structuredContent: { path: target } };
+      }
+    );
+  }
   const appOrigin = new URL(APP_URL).origin;
   const html = widgetHtml.replaceAll("%%APP_URL%%", APP_URL);
   for (const uri of [WIDGET_URI, ...LEGACY_WIDGET_URIS]) {
@@ -36780,5 +36827,5 @@ function createServer({ widgetHtml, iconSvg }) {
 }
 
 // src/stdio.ts
-var server = createServer(await loadAssets());
+var server = createServer({ ...await loadAssets(), local: true });
 await server.connect(new StdioServerTransport());

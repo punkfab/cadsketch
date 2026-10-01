@@ -1011,6 +1011,26 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Adds a circle (a hole, or a round body) to the active part. The same thing
+  /// a hand-drawn circle stroke produces, for callers that already know the
+  /// centre and radius.
+  void addCircle(Offset center, double radius) {
+    _record();
+    decorations.add(CircleEntity(center, radius));
+    notifyListeners();
+  }
+
+  /// Moves a circle of the active part, keeping its radius and any parameter
+  /// binding.
+  void moveCircle(int decorationIndex, Offset center) {
+    final e = decorations[decorationIndex];
+    if (e is! CircleEntity) return;
+    _record();
+    decorations[decorationIndex] =
+        CircleEntity(center, e.radius, radiusParam: e.radiusParam);
+    notifyListeners();
+  }
+
   /// Sets a circle's radius to a literal value (unbinding any parameter).
   void setCircleRadius(int decorationIndex, double radius) {
     _record();

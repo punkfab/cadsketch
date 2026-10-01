@@ -1,6 +1,6 @@
 ---
 name: cadsketch
-description: Design flat, extruded mechanical parts (plates, brackets, gaskets, spacers, panels) with the user in the CADSketch editor. Draw parts with draw_parts, write and edit .cadsketch files, open .dxf files, and review what the user has sketched. Use for any request to design, draw, sketch, model, dimension or review a part that is a 2D outline with holes, extruded to a thickness.
+description: Design flat, extruded mechanical parts (plates, brackets, gaskets, spacers, panels) with the user in the CADSketch editor. Draw parts, edit the open sketch in place (move vertices, add and move holes, set driving dimensions, add constraints, undo), look at it with a screenshot, export STL, write and edit .cadsketch files, open .dxf files, and review what the user has sketched. Use for any request to design, draw, sketch, model, dimension, change or review a part that is a 2D outline with holes, extruded to a thickness.
 ---
 
 # CADSketch
@@ -32,7 +32,58 @@ Millimetres. X right, Y up. Every tool and file uses this shape:
 Use real hardware sizes. Clearance hole radii: M3 1.7, M4 2.25, M5 2.75, M6 3.3.
 Keep at least one hole diameter of material between a hole and any edge.
 
-## Two ways to work
+## Editing the sketch that is open
+
+When the CADSketch editor is open (the sidebar tab, the panel beside this
+conversation, or a file), it publishes tools that act on that live sketch. Each
+call is one step on the editor's undo stack, exactly like a hand edit, and the
+user sees it happen.
+
+1. Call `get_sketch` first. It returns every part with its `profile` vertices,
+   `holes`, `edges` (each with its `length`, and `driving` when dimensioned) and
+   `constraintList`. Those lists give you the indices the other tools take.
+   Call it again whenever the user may have edited by hand.
+2. Make the smallest change that does the job:
+
+| To | Use |
+| --- | --- |
+| add, move, resize or remove a hole | `add_hole`, `move_hole`, `remove_hole` |
+| move a corner | `move_vertex` |
+| make an edge an exact length | `set_dimension` (`length: null` removes it) |
+| lock in design intent | `add_constraint` (horizontal, vertical, parallel, perpendicular, equal), `remove_constraint` |
+| change thickness | `set_depth` |
+| add, select or delete a part | `add_part`, `select_part`, `delete_part` |
+| start over | `replace_parts` |
+| step back | `undo`, `redo` |
+| see it | `screenshot` |
+| make a printable file | `export_stl` |
+
+3. Read the result. Every edit returns the updated part; `add_hole` warns when a
+   hole landed outside the profile.
+
+Things worth knowing:
+
+- Edge `i` runs from vertex `i` to vertex `i + 1`. Indices can change after an
+  edit that adds or removes geometry, so re-read rather than reuse stale ones.
+- Parts you draw start with horizontal and vertical constraints on their
+  axis-aligned edges. That is why `set_dimension` on one side of a rectangle
+  widens the whole plate instead of skewing it. `move_vertex` respects
+  constraints too, so neighbouring corners follow; pass `release_constraints`
+  to move one corner alone.
+- Prefer `set_dimension` over `move_vertex` when the user states a size ("make
+  it 95 wide"). A driving dimension keeps holding through later edits.
+- `replace_parts` discards the user's constraints and dimensions. Use it for a
+  new design, not for a tweak.
+- Use `screenshot` to check your work when geometry matters, or when the user
+  says "this corner" or "that hole" and you need to see what they mean.
+- `export_stl` saves next to the open `.cadsketch` file and returns the path.
+  With no file open the app offers a download instead.
+
+These tools exist only while the editor is open. If they are not available,
+open it (`open_sketcher`, or have the user open the `.cadsketch` file) or work
+through the file as described below.
+
+## Other ways to work
 
 **In the conversation: `draw_parts`.** Call it with the full list of parts. The
 editor opens inline with them, and the result reports each part's size, volume
@@ -76,6 +127,9 @@ or to each other, walls thinner than the process allows (about 1 mm for FDM
 printing, material thickness for laser cutting), and sharp internal corners that
 a cutter cannot reach.
 
+`check_parts` validates parts without opening the editor: use it on a
+`.cadsketch` file you just wrote, before telling the user it is ready.
+
 ## Limits to be honest about
 
 - Parts are flat profiles extruded straight up. No fillets on the extruded
@@ -84,4 +138,6 @@ a cutter cannot reach.
   visible to you but you cannot create them.
 - Arcs you send are stored as short straight edges, so a rounded profile comes
   back with many vertices.
-- STL export is done by the user in the editor (the command menu, Export STL).
+- Constraints and driving dimensions live in the editor session. A `.cadsketch`
+  file stores geometry only, so they are re-inferred (horizontal and vertical)
+  when a file is reloaded.

@@ -1,5 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import { describe, report, structuralError, type PartInput } from "./geometry.js";
 
@@ -20,13 +22,13 @@ import { describe, report, structuralError, type PartInput } from "./geometry.js
 /** Where the CADSketch web build is served. Must be the build with the host bridge. */
 export const APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/app/";
 
-export const SERVER_VERSION = "0.2.0";
+export const SERVER_VERSION = "0.3.0";
 
 // Bump the version in the URI when the widget changes in a breaking way: hosts
 // cache the template by URI. Earlier URIs stay readable (same page) for hosts
 // holding a cached tool list.
-const WIDGET_URI = "ui://cadsketch/sketcher-v3.html";
-const LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
+const WIDGET_URI = "ui://cadsketch/sketcher-v4.html";
+const LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
 
 /** File types the editor opens from a workspace (desktop hosts). */
 export const FILE_EXTENSIONS = [".cadsketch", ".dxf"];
@@ -80,9 +82,14 @@ export interface ServerOptions {
   widgetHtml: string;
   /** Monochrome SVG (currentColor) shown in the sidebar and tabs. */
   iconSvg: string;
+  /**
+   * True for the server a desktop plugin runs on the user's own machine. Only
+   * then does it offer tools that touch the filesystem.
+   */
+  local?: boolean;
 }
 
-export function createServer({ widgetHtml, iconSvg }: ServerOptions): McpServer {
+export function createServer({ widgetHtml, iconSvg, local = false }: ServerOptions): McpServer {
   const icon = {
     src: "data:image/svg+xml," + encodeURIComponent(iconSvg),
     mimeType: "image/svg+xml",
@@ -188,6 +195,57 @@ export function createServer({ widgetHtml, iconSvg }: ServerOptions): McpServer 
       structuredContent: { file },
     }),
   );
+
+  server.registerTool(
+    "check_parts",
+    {
+      title: "Check parts",
+      description:
+        "Check parts without opening the editor: returns each part's size, volume and geometry warnings (a hole outside the outline, a wall under 1 mm, overlapping holes, a profile that crosses itself). " +
+        "Use it to validate a .cadsketch file you just wrote, or a design before drawing it. Same part format as draw_parts.",
+      inputSchema: { parts: partsArg },
+      outputSchema: { report: z.array(reportShape) },
+      annotations: READ_ONLY,
+    },
+    async ({ parts }): Promise<CallToolResult> => {
+      const inputs = parts as PartInput[];
+      const errors = inputs.map(structuralError).filter((e): e is string => e !== null);
+      if (errors.length) return { isError: true, content: [{ type: "text", text: errors.join(" ") }] };
+      const reports = inputs.map(report);
+      return { content: [{ type: "text", text: reports.map(describe).join("\n") }], structuredContent: { report: reports } };
+    },
+  );
+
+  if (local) {
+    // Called by the editor, never by the model. When the editor was opened on a
+    // workspace file, the host adds that file's real path to the call
+    // (`_meta["openai/resource"].path`); the export is written next to it. With
+    // no host-provided path there is nowhere trusted to write, so it refuses.
+    server.registerTool(
+      "save_export",
+      {
+        title: "Save export",
+        description: "Save an exported STL next to the open .cadsketch file.",
+        inputSchema: {
+          fileName: z.string().regex(/^[A-Za-z0-9_-]{1,80}\.stl$/, "must be a plain .stl file name"),
+          blob: z.string().max(64 * 1024 * 1024).describe("Base64 file contents"),
+        },
+        outputSchema: { path: z.string() },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+        _meta: { ui: { visibility: ["app"] } },
+      },
+      async ({ fileName, blob }, extra): Promise<CallToolResult> => {
+        const meta = (extra as { _meta?: Record<string, unknown> })._meta;
+        const openedPath = (meta?.["openai/resource"] as { path?: unknown } | undefined)?.path;
+        if (typeof openedPath !== "string" || !path.isAbsolute(openedPath)) {
+          return { isError: true, content: [{ type: "text", text: "No open workspace file to save next to." }] };
+        }
+        const target = path.join(path.dirname(openedPath), fileName);
+        await writeFile(target, Buffer.from(blob, "base64"));
+        return { content: [{ type: "text", text: `Saved ${target}` }], structuredContent: { path: target } };
+      },
+    );
+  }
 
   const appOrigin = new URL(APP_URL).origin;
   const html = widgetHtml.replaceAll("%%APP_URL%%", APP_URL);

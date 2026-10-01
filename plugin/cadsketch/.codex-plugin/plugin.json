@@ -1,32 +1,45 @@
 {
   "name": "cadsketch",
-  "version": "0.2.0",
-  "description": "Sketch, edit and review flat mechanical parts in CADSketch, right inside Codex.",
+  "version": "0.3.0",
+  "description": "Sketch, edit and review flat mechanical parts in CADSketch, right inside Codex. The agent can draw, edit the open sketch in place, set dimensions and constraints, see the result, and export STL.",
   "author": {
     "name": "punkfab",
     "url": "https://punkfab.com"
   },
   "homepage": "https://cadsketch.ai",
   "repository": "https://github.com/punkfab/cadsketch",
-  "keywords": ["cad", "sketch", "dxf", "fabrication", "parametric", "laser-cut", "3d-printing"],
+  "keywords": [
+    "cad",
+    "sketch",
+    "dxf",
+    "fabrication",
+    "parametric",
+    "laser-cut",
+    "3d-printing"
+  ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "CADSketch",
-    "shortDescription": "Sketch and edit mechanical parts",
-    "longDescription": "CADSketch is a sketch-first CAD editor: freehand strokes snap to clean, constrained, dimensioned geometry that extrudes to a solid. In Codex it opens from the sidebar or beside a conversation, opens .cadsketch and .dxf files from your workspace, and shares what is on the canvas with the agent so it can draw, review and revise parts with you.",
+    "shortDescription": "Sketch and edit CAD parts",
+    "longDescription": "CADSketch is a sketch-first CAD editor: freehand strokes snap to clean, constrained, dimensioned geometry that extrudes to a solid. In Codex it opens from the sidebar or beside a conversation, opens .cadsketch and .dxf files from your workspace, and lets the agent work in the same sketch you are looking at: it can read the canvas, move vertices, add holes, set driving dimensions and constraints, undo, take a screenshot, and export STL.",
     "developerName": "punkfab",
     "category": "Developer Tools",
-    "capabilities": ["Interactive", "Read", "Write"],
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
     "websiteURL": "https://cadsketch.ai",
     "privacyPolicyURL": "https://cadsketch.ai/privacy/",
     "composerIcon": "./assets/icon.svg",
     "logo": "./assets/icon.svg",
     "defaultPrompt": [
       "Use CADSketch to draw a 60 x 30 mm L-bracket, 5 mm thick, with three M4 holes.",
-      "Create bracket.cadsketch for a motor mount and open it in CADSketch.",
-      "Review the part I have open in CADSketch for manufacturability."
+      "Make the plate I have open 95 mm wide and add an M4 hole 8 mm in from each corner.",
+      "Review the part I have open in CADSketch for manufacturability, then export an STL."
     ],
-    "brandColor": "#0F2747"
+    "brandColor": "#0F2747",
+    "supportURL": "https://cadsketch.ai/support/"
   }
 }

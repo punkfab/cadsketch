@@ -8,7 +8,7 @@ It is the same app. Nothing here forks the editor:
 
 ```
  host (Codex / ChatGPT desktop, or a chat host over HTTP)
-   │  MCP                      tools: draw_parts, open_sketcher, open_file
+   │  MCP                      tools: draw_parts, open_sketcher, open_file, check_parts
    ▼
  mcp/src  ── one stateless server, two entry points ──────────────────────
    │   stdio.ts   launched locally by the plugin   (plugin/cadsketch)
@@ -18,8 +18,10 @@ It is the same app. Nothing here forks the editor:
    │      └── <iframe>  https://cadsketch.ai/app/?mcp=1   ← the normal Flutter web build
    │   private string messages (lib/mcp/host_bridge_web.dart)
    │      shell → app   load / loadDxf   content to show
+   │      shell → app   call             one editing command (lib/mcp/host_commands.dart)
    │      app → shell   ready            the editor is up
    │      app → shell   state            what is on the canvas now
+   │      app → shell   result           the answer to a call
    ▼
  the model sees the canvas (ui/update-model-context); an opened .cadsketch file
  is kept in sync both ways
@@ -52,6 +54,39 @@ adding `_meta["openai/ui"].entrypoints` to a tool:
 File viewers are desktop-only; sidebar and thread entrypoints also work on the
 web. Hosts without the extensions (Claude, plain MCP Apps hosts) ignore the
 metadata and still get `draw_parts` and `open_sketcher` as ordinary tools.
+
+### Live tools: the agent edits the open sketch
+
+The server's tools can only open the editor. To work *in* it, the mounted
+widget publishes its own tools to the model (MCP Apps app tools,
+`mcp/widget/live-tools.ts`). Each is a command sent into the editor, run by
+`lib/mcp/host_commands.dart` through the controller's ordinary public API, so
+it is one step on the undo stack and indistinguishable from a hand edit.
+
+| Group | Tools |
+| --- | --- |
+| Read | `get_sketch`, `screenshot` |
+| Geometry | `add_hole`, `move_hole`, `remove_hole`, `move_vertex`, `set_depth` |
+| Intent | `set_dimension`, `add_constraint`, `remove_constraint` |
+| Parts | `add_part`, `select_part`, `delete_part`, `replace_parts` |
+| Control | `undo`, `redo`, `fit_view` |
+| Output | `export_stl` |
+
+Addressing is in the model's terms: mm with Y up, a part by name, a vertex or
+edge by its index around the closed profile, a hole by its index in `holes`.
+`get_sketch` reports those indices. A mistake comes back as an instruction
+("vertex must be an index from 0 to 3"), never a hang.
+
+Parts drawn by a host get horizontal and vertical constraints on their
+axis-aligned edges (`importPartSpec`), so driving one side of a rectangle
+widens the plate instead of skewing it.
+
+`export_stl` saves next to the open `.cadsketch` file through `save_export`, a
+tool only the local (stdio) server registers and only the app may call. It
+writes only beside the path the host supplies for the opened file, and only a
+plain `*.stl` name. With no file open, the export is offered as a download.
+
+`check_parts` is the one headless tool: geometry report without the editor.
 
 ### `.cadsketch` files
 
@@ -99,7 +134,7 @@ its own mistakes.
 ```sh
 cd mcp
 npm install
-npm test        # builds, then 15 tests: both transports, the file format, the bundled plugin
+npm test        # builds, then 17 tests: both transports, the file format, the bundled plugin
 npm run dev     # http://localhost:3001/mcp, editor = https://cadsketch.ai/app/
 ```
 
@@ -118,10 +153,13 @@ cd mcp && node e2e/fake-host.mjs ../plugin/cadsketch/dist/widget.html http://loc
 # add "allow-scripts" as a last argument to test a sandbox with no origin
 ```
 
-It checks: a file opens and is reported to the model, opening does not rewrite
-it, a dragged vertex is saved with the right etag, the save's echo does not
-loop, an external change reloads the editor, `.dxf` is never written, and the
-sidebar canvas fills its container.
+It checks 30 things: a file opens and is reported to the model, opening does
+not rewrite it, a dragged vertex is saved with the right etag, the save's echo
+does not loop, an external change reloads the editor, `.dxf` is never written,
+the sidebar canvas fills its container, and the live tools: the tool list, a
+hole added by tool and saved to the file, a driven dimension that keeps the
+rectangle square, constraints, undo, a helpful error, a real screenshot, and
+STL export both next to a file and as a download.
 
 ## Install in Codex / ChatGPT desktop
 
@@ -187,6 +225,11 @@ Other limits:
   thing the DXF importer does), so they come back as many vertices.
 - Face features and imported meshes are reported to the model but cannot be
   drawn by it or saved to a `.cadsketch` file.
+- A `.cadsketch` file stores geometry only. Constraints and driving dimensions
+  live in the editor session and are re-inferred (horizontal / vertical) on
+  reload.
+- The live tools address a part's vertices and edges around its closed profile,
+  so they need one; an open sketch can be read but not edited by index.
 - A chat host that re-renders an inline widget replays the model's last
   drawing, so hand edits made after it are not restored. Files don't have this
   problem: the file is the state.

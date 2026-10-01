@@ -4,5 +4,6 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { loadAssets } from "./assets.js";
 import { createServer } from "./server.js";
 
-const server = createServer(await loadAssets());
+// `local`: this server runs on the user's machine, so it may save exports to disk.
+const server = createServer({ ...(await loadAssets()), local: true });
 await server.connect(new StdioServerTransport());

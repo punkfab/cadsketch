@@ -15,6 +15,7 @@
 import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
 import { OpenAIExtensions, OpenAIFileEntrypointInputSchema } from "@openai/mcp-extensions/app";
 import { canonical, fileKind, parseFile, partsFromState, serializeFile, type FilePart } from "./file-sync.js";
+import { registerLiveTools } from "./live-tools.js";
 
 const TO_HOST = "cadsketch>host:";
 const TO_APP = "cadsketch>app:";
@@ -36,6 +37,7 @@ appUrl.searchParams.set("mcp", "1");
 type McpUiHostContext = NonNullable<ReturnType<App["getHostContext"]>>;
 type State = { structured: Record<string, unknown>; text: string; loadId?: number };
 type EditorMessage = { type: "load"; parts: unknown[]; loadId: number } | { type: "loadDxf"; name: string; text: string; loadId: number };
+type Pending = { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
 
 /** The workspace file this instance was opened on, if any. */
 type OpenFile = {
@@ -62,7 +64,8 @@ let nextLoadId = 1;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let whenConnected: Promise<void> = Promise.resolve(); // set at the bottom, once connect() is called
 
-const app = new App({ name: "CADSketch", version: "0.2.0" }, { availableDisplayModes: ["inline", "fullscreen"] });
+// `tools`: this app publishes its own tools to the model while it is mounted.
+const app = new App({ name: "CADSketch", version: "0.3.0" }, { tools: { listChanged: true }, availableDisplayModes: ["inline", "fullscreen"] });
 const openai = new OpenAIExtensions(app);
 
 function setStatus(text: string) {
@@ -81,10 +84,71 @@ function sendToEditor(message: EditorMessage) {
   frame.contentWindow?.postMessage(TO_APP + JSON.stringify(message), "*");
 }
 
+// ---- commands: model -> editor ---------------------------------------------
+
+const calls = new Map<number, Pending>();
+const readyWaiters: (() => void)[] = [];
+let nextCallId = 1;
+
+/** Runs one editing command in the live editor and resolves with its result. */
+async function callEditor(op: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (!editorReady) {
+    // A tool can be called the moment the app mounts; give the editor time to start.
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("The CADSketch editor has not finished loading. Try again in a moment.")), 25000);
+      readyWaiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+  const id = nextCallId++;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      calls.delete(id);
+      reject(new Error(`The editor did not answer "${op}".`));
+    }, 15000);
+    calls.set(id, { resolve, reject, timer });
+    frame.contentWindow?.postMessage(TO_APP + JSON.stringify({ type: "call", id, op, args }), "*");
+  });
+}
+
+/** Where an export goes: next to the open file when there is one, else a download. */
+async function saveExport(fileName: string, base64: string): Promise<string> {
+  if (file) {
+    // The local plugin server may write next to the file the host opened; the
+    // host adds that file's real path to this call, the app never sees it.
+    const saved = await app.callServerTool({ name: "save_export", arguments: { fileName, blob: base64 } }).catch(() => null);
+    const path = (saved?.structuredContent as { path?: string } | undefined)?.path;
+    if (saved && !saved.isError && path) return `Saved ${path}.`;
+  }
+  if (app.getHostCapabilities()?.downloadFile) {
+    const result = await app.downloadFile({
+      contents: [{ type: "resource", resource: { uri: `file:///${fileName}`, mimeType: "model/stl", blob: base64 } }],
+    });
+    if (!result.isError) return `Offered ${fileName} to the user as a download.`;
+  }
+  throw new Error(
+    "This app could not save the STL. Open a .cadsketch file from the workspace in CADSketch and export again (the STL is then saved next to it), or ask the user to use Export STL in the editor's command menu.",
+  );
+}
+
+registerLiveTools(app, { call: callEditor, saveExport });
+
 window.addEventListener("message", (event) => {
   if (event.source !== frame.contentWindow) return;
   if (typeof event.data !== "string" || !event.data.startsWith(TO_HOST)) return;
-  let message: { type?: string; structured?: Record<string, unknown>; text?: string; message?: string; loadId?: number };
+  let message: {
+    type?: string;
+    structured?: Record<string, unknown>;
+    text?: string;
+    message?: string;
+    loadId?: number;
+    id?: number;
+    ok?: boolean;
+    value?: Record<string, unknown>;
+    error?: string;
+  };
   try {
     message = JSON.parse(event.data.slice(TO_HOST.length));
   } catch {
@@ -94,6 +158,7 @@ window.addEventListener("message", (event) => {
     editorReady = true;
     veil.hidden = true;
     reviewBtn.hidden = false;
+    for (const wake of readyWaiters.splice(0)) wake();
     if (pendingLoad) {
       const queued = pendingLoad;
       pendingLoad = null;
@@ -103,6 +168,13 @@ window.addEventListener("message", (event) => {
     const state = { structured: message.structured, text: message.text, loadId: message.loadId };
     syncFile(state);
     reportState(state);
+  } else if (message.type === "result" && typeof message.id === "number") {
+    const pending = calls.get(message.id);
+    if (!pending) return;
+    calls.delete(message.id);
+    clearTimeout(pending.timer);
+    if (message.ok) pending.resolve(message.value ?? {});
+    else pending.reject(new Error(message.error ?? "The editor rejected the command."));
   } else if (message.type === "error" && message.message) {
     setStatus(message.message);
   }

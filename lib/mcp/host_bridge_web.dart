@@ -6,6 +6,8 @@ import 'package:web/web.dart' as web;
 
 import '../sketch/dxf.dart';
 import '../ui/sketch_canvas.dart';
+import 'host_capture.dart';
+import 'host_commands.dart';
 import 'host_document.dart';
 import 'part_spec.dart';
 
@@ -25,6 +27,8 @@ import 'part_spec.dart';
 //   app  -> shell   "cadsketch>host:" + {"type":"state","structured":{},"text":""}
 //   shell -> app    "cadsketch>app:"  + {"type":"load","parts":[...],"loadId":1}
 //   shell -> app    "cadsketch>app:"  + {"type":"loadDxf","name":"","text":""}
+//   shell -> app    "cadsketch>app:"  + {"type":"call","id":1,"op":"add_hole","args":{}}
+//   app  -> shell   "cadsketch>host:" + {"type":"result","id":1,"ok":true,"value":{}}
 
 @JS('CADSKETCH_MCP')
 external JSAny? get _directFlag;
@@ -117,6 +121,8 @@ class HostBridge {
           _loadId = msg['loadId'];
           _lastSent = null;
           _onDocumentChanged();
+        case 'call':
+          _call(msg['id'], (msg['op'] ?? '').toString(), msg['args']);
         case 'ping':
           _post({'type': 'ready'});
           _lastSent = null;
@@ -128,6 +134,40 @@ class HostBridge {
       _post({'type': 'error', 'message': 'DXF: ${e.message}'});
     } catch (e) {
       _post({'type': 'error', 'message': 'could not apply host message'});
+    }
+  }
+
+  /// Runs one editing command for the host and always answers it, so a tool
+  /// call never hangs: a mistake comes back as a message the model can act on.
+  Future<void> _call(Object? id, String op, Object? rawArgs) async {
+    void fail(String message) =>
+        _post({'type': 'result', 'id': id, 'ok': false, 'error': message});
+    try {
+      final args = rawArgs is Map
+          ? rawArgs.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+      if (op == 'screenshot') {
+        final shot = await captureApp();
+        if (shot == null) return fail('The editor is not on screen yet.');
+        return _post({
+          'type': 'result',
+          'id': id,
+          'ok': true,
+          'value': {
+            'pngBase64': shot.base64,
+            'width': shot.width,
+            'height': shot.height,
+          },
+        });
+      }
+      final value = runHostCommand(_controller, op, args);
+      _post({'type': 'result', 'id': id, 'ok': true, 'value': value});
+    } on HostCommandException catch (e) {
+      fail(e.message);
+    } on PartSpecException catch (e) {
+      fail(e.message);
+    } catch (e) {
+      fail('The editor could not run "$op".');
     }
   }
 }

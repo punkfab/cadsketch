@@ -7,7 +7,7 @@ Puts the CADSketch editor inside the Codex / ChatGPT desktop app:
 | Sidebar | **CADSketch** opens the editor as a full tab, next to a conversation. |
 | Thread | Open the editor as a panel beside the conversation you are in. |
 | Files | `.cadsketch` and `.dxf` files in your workspace open in the editor. `.cadsketch` edits save back to the file, and the editor reloads when the agent changes it. |
-| Agent | The `draw_parts` tool and the `cadsketch` skill: the agent draws parts, and sees what is on your canvas. |
+| Agent | The agent works in the sketch you have open: it reads the canvas, moves vertices, adds holes, sets driving dimensions and constraints, undoes, takes a screenshot, and exports STL. Plus `draw_parts`, and the `cadsketch` skill that teaches it the workflow. |
 
 ## Install
 
@@ -29,6 +29,8 @@ cadsketch@cadsketch`, then `codex plugin add cadsketch@cadsketch`.
 - Ask: *"Create bracket.cadsketch for a 60 × 30 mm L-bracket, 5 mm thick, with
   three M4 holes"*, then open the file.
 - Drag a corner in the editor, then ask *"what changed in bracket.cadsketch?"*
+- With the file open: *"make it 95 mm wide, add an M4 hole 8 mm in from each
+  corner, and export an STL."*
 
 ## What is in here
 

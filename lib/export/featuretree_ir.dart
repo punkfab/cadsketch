@@ -40,8 +40,8 @@ typedef FeatureIr = Map<String, dynamic>;
 ///  * each full [CircleEntity] whose centre lies inside that profile -> its own
 ///    circle sketch + a through `pocket` (a drilled hole). Circles outside the
 ///    profile are ignored (stray construction marks).
-///  * with no closed profile but a circle present -> the circle is the body
-///    (a padded cylinder).
+///  * with no closed profile but circles present -> the largest circle is the
+///    body (a padded cylinder) and circles inside it are through holes.
 ///
 /// [scale] multiplies every length (ai-sketcher logical units -> mm; default
 /// 1:1). Sketch Y is flipped (screen Y-down -> CAD Y-up) so the FreeCAD part is
@@ -69,9 +69,21 @@ FeatureIr partToIr(Part part, {double scale = 1.0}) {
       hi++;
     }
   } else if (circles.isNotEmpty) {
-    // No closed contour: a lone circle is the body (a cylinder).
-    features.add(_sketch('profile', circles: [_circle(circles.last, scale)]));
+    // No closed contour: the largest circle is the body (a cylinder), and any
+    // other circle inside it is a through-hole (a washer, a spacer). This is
+    // the same rule Part.profileWithHoles builds the solid by.
+    final body = circles.reduce((a, b) => b.radius > a.radius ? b : a);
+    features.add(_sketch('profile', circles: [_circle(body, scale)]));
     features.add(_pad('body', 'profile', _r(part.depth * scale)));
+    var hi = 0;
+    for (final c in circles) {
+      if (identical(c, body)) continue;
+      if ((c.center - body.center).distance >= body.radius) continue;
+      final sk = 'hole${hi}_sketch';
+      features.add(_sketch(sk, circles: [_circle(c, scale)]));
+      features.add(_pocket('hole$hi', sk, through: true));
+      hi++;
+    }
   }
 
   return {'name': _slug(part.name), 'features': features};

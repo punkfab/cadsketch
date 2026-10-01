@@ -164,6 +164,30 @@ void main() {
     expect((doc['parts'] as List), hasLength(1));
   });
 
+  test('holes of a round part are addressable too', () {
+    final c = SketchController();
+    run(c, 'add_part', {
+      'part': {
+        'name': 'washer',
+        'depth': 2,
+        'circle': [0, 0, 6],
+        'holes': [
+          [0, 0, 2.75]
+        ]
+      }
+    });
+    var part = partOf(run(c, 'move_hole', {'hole': 0, 'radius': 3.3}));
+    expect(part['circle'], [0, 0, 6]);
+    expect(part['holes'], [
+      [0, 0, 3.3]
+    ]);
+    part = partOf(run(c, 'remove_hole', {'hole': 0}));
+    expect(part['holes'], isEmpty);
+    expect(part['circle'], [0, 0, 6]);
+    expect(() => run(c, 'remove_hole', {'hole': 0}),
+        throwsA(isA<HostCommandException>()));
+  });
+
   test('add_part into an untouched editor replaces the placeholder', () {
     final c = SketchController();
     run(c, 'add_part', {

@@ -182,6 +182,23 @@ test("save_export writes only next to the file the host opened", async () => {
   }
 });
 
+test("the directory package builds and passes the portal's limits", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const out = execFileSync("node", ["package-directory.mjs"], { cwd: fileURLToPath(new URL("../", import.meta.url)), encoding: "utf8" });
+  assert.match(out, /cadsketch-plugin-\d+\.\d+\.\d+\.zip/);
+  for (const entry of [".codex-plugin/plugin.json", ".mcp.json", "skills/cadsketch/SKILL.md", "assets/logo.svg", "assets/screenshot-1.png"]) {
+    assert.ok(out.includes(entry), `ZIP is missing ${entry}`);
+  }
+  // The local server bundle must not ship to the directory.
+  assert.ok(!out.includes("dist/server.js"));
+  const staged = JSON.parse(await readFile(new URL("../dist/directory/cadsketch/.codex-plugin/plugin.json", import.meta.url), "utf8"));
+  assert.equal(staged.extensions["com.openai"].review.test_cases.positive.length, 5);
+  assert.equal(staged.extensions["com.openai"].review.test_cases.negative.length, 3);
+  assert.equal(staged.interface.screenshots.length, staged.interface.defaultPrompt.length);
+  const mcp = JSON.parse(await readFile(new URL("../dist/directory/cadsketch/.mcp.json", import.meta.url), "utf8"));
+  assert.match(mcp.mcpServers.cadsketch.url, /^https:\/\/.+\/mcp$/);
+});
+
 test("bulge arcs: a semicircle end adds half a disc of area", () => {
   // 20 x 20 square with a CCW semicircle (r = 10) on the right edge.
   const r = report({ name: "tab", depth: 1, profile: [[0, 0], [20, 0, 1], [20, 20], [0, 20]] });

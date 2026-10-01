@@ -1,0 +1,215 @@
+{
+ "_comment": "What the OpenAI directory submission adds to the local plugin's manifest. Built into a ZIP by mcp/package-directory.mjs, which also checks every limit the submission portal enforces. The directory version uses the REMOTE server, so its prompts and test cases describe what works from a cold start, without a local file or an editor already open.",
+ "mcpUrl": "https://mcp.cadsketch.ai/mcp",
+ "prompts": [
+  {
+   "prompt": "Draw a 60 x 30 mm L-bracket, 5 mm thick, with three M4 holes.",
+   "screenshot": "screenshot-1.png",
+   "parts": [
+    {
+     "name": "bracket",
+     "depth": 5,
+     "profile": [
+      [
+       0,
+       0
+      ],
+      [
+       60,
+       0
+      ],
+      [
+       60,
+       30
+      ],
+      [
+       45,
+       30
+      ],
+      [
+       45,
+       15
+      ],
+      [
+       0,
+       15
+      ]
+     ],
+     "holes": [
+      [
+       10,
+       7.5,
+       2.25
+      ],
+      [
+       35,
+       7.5,
+       2.25
+      ],
+      [
+       52.5,
+       22,
+       2.25
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Design an 80 x 40 mm mounting plate, 4 mm thick, with an M4 hole 8 mm in from each corner.",
+   "screenshot": "screenshot-2.png",
+   "parts": [
+    {
+     "name": "plate",
+     "depth": 4,
+     "profile": [
+      [
+       0,
+       0
+      ],
+      [
+       80,
+       0
+      ],
+      [
+       80,
+       40
+      ],
+      [
+       0,
+       40
+      ]
+     ],
+     "holes": [
+      [
+       8,
+       8,
+       2.25
+      ],
+      [
+       72,
+       8,
+       2.25
+      ],
+      [
+       72,
+       32,
+       2.25
+      ],
+      [
+       8,
+       32,
+       2.25
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "prompt": "Draw a 100 x 20 mm strap, 3 mm thick, with five evenly spaced M3 holes.",
+   "screenshot": "screenshot-3.png",
+   "parts": [
+    {
+     "name": "strap",
+     "depth": 3,
+     "profile": [
+      [
+       0,
+       0
+      ],
+      [
+       100,
+       0
+      ],
+      [
+       100,
+       20
+      ],
+      [
+       0,
+       20
+      ]
+     ],
+     "holes": [
+      [
+       10,
+       10,
+       1.7
+      ],
+      [
+       30,
+       10,
+       1.7
+      ],
+      [
+       50,
+       10,
+       1.7
+      ],
+      [
+       70,
+       10,
+       1.7
+      ],
+      [
+       90,
+       10,
+       1.7
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "release_notes": "First release. Draw flat, extruded mechanical parts from a description, open them in the CADSketch editor inside the conversation, edit them by hand or by asking, check them for manufacturing problems, and export STL.",
+ "review": {
+  "test_cases": {
+   "positive": [
+    {
+     "description": "Draw a part from a plain-language description. The assistant converts the description into an outline with holes and a thickness, and the part opens in the CADSketch editor.",
+     "prompt": "Draw a 60 x 30 mm L-bracket, 5 mm thick, with three M4 holes.",
+     "tools_triggered": "draw_parts",
+     "expected_behavior": "draw_parts is called with one part: an L-shaped six-vertex profile about 60 x 30 mm, depth 5, and three holes of radius 2.25 mm. The CADSketch editor appears in the conversation showing the bracket as a dimensioned 2D sketch and an extruded 3D view. The assistant reports the size and volume and that there are no geometry warnings."
+    },
+    {
+     "description": "Draw a part where hole positions are given relative to the edges, which the assistant must turn into coordinates.",
+     "prompt": "Design an 80 x 40 mm mounting plate, 4 mm thick, with an M4 hole 8 mm in from each corner.",
+     "tools_triggered": "draw_parts",
+     "expected_behavior": "draw_parts is called with a rectangular 80 x 40 mm profile, depth 4, and four radius 2.25 mm holes at (8,8), (72,8), (72,32) and (8,32). The editor shows the plate with four holes. The report has no warnings."
+    },
+    {
+     "description": "Open an empty canvas so the user can sketch by hand.",
+     "prompt": "Open CADSketch so I can sketch a part myself.",
+     "tools_triggered": "open_sketcher",
+     "expected_behavior": "open_sketcher is called with no arguments and the CADSketch editor appears with an empty canvas. The assistant says the user can draw and that it will be able to see the sketch. Drawing a closed shape in the editor snaps it to clean geometry and shows it extruded in the 3D view."
+    },
+    {
+     "description": "Check a design for manufacturing problems without drawing it. The server computes the geometry report; the assistant relays the warnings.",
+     "prompt": "Check this design before I make it: a 40 x 20 mm plate, 5 mm thick, with a 3 mm radius hole centred 2 mm from the short edge.",
+     "tools_triggered": "check_parts",
+     "expected_behavior": "check_parts is called with the plate and a hole of radius 3 centred 2 mm from an edge. The result contains a warning that the hole breaks through the edge of the part. The assistant explains the problem and suggests moving the hole inward or making it smaller. No editor is opened."
+    },
+    {
+     "description": "Revise a part that was already drawn. The assistant redraws it with the requested changes.",
+     "prompt": "First: Draw a 60 x 30 mm L-bracket, 5 mm thick, with three M4 holes. Then: Make it 8 mm thick and change the holes to M5.",
+     "tools_triggered": "draw_parts (when the editor from the first message is still open the assistant may instead use the editor's own set_depth and move_hole tools)",
+     "expected_behavior": "After the second message the bracket shown in the editor is 8 mm thick and its three holes have radius 2.75 mm, with the same outline as before. The assistant confirms the new thickness and hole size."
+    }
+   ],
+   "negative": [
+    {
+     "description": "A general engineering question that needs no drawing. CADSketch should not be invoked.",
+     "prompt": "What is the tensile strength of 6061-T6 aluminium?"
+    },
+    {
+     "description": "A request for something CADSketch cannot make: it draws flat outlines extruded to a thickness, not organic or freeform 3D shapes. The assistant should say so rather than call draw_parts with something unrelated.",
+     "prompt": "Use CADSketch to sculpt a realistic 3D model of a human hand."
+    },
+    {
+     "description": "An unrelated coding task. CADSketch should not be invoked.",
+     "prompt": "Write a Python script that parses a CSV file and prints the average of each column."
+    }
+   ]
+  }
+ }
+}

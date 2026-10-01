@@ -345,19 +345,31 @@ int? _segmentBetween(ParametricSketch s, int a, int b) {
   return null;
 }
 
-/// Decoration index of the [hole]-th reported hole: the circles that lie inside
-/// the profile, in draw order (the same rule `partToIr` reports them by).
+/// Decoration index of the [hole]-th reported hole, by the same rule `partToIr`
+/// reports them: with a profile, the circles inside it in draw order; with no
+/// profile, the circles inside the largest one (which is the round body).
 int _holeDecoration(Part part, Object? hole) {
   final profile = part.sketch.closedProfile();
   final indices = <int>[];
-  for (var i = 0; i < part.decorations.length; i++) {
-    final e = part.decorations[i];
-    if (e is CircleEntity && (profile == null || _inside(profile, e.center))) {
-      indices.add(i);
+  if (profile != null) {
+    for (var i = 0; i < part.decorations.length; i++) {
+      final e = part.decorations[i];
+      if (e is CircleEntity && _inside(profile, e.center)) indices.add(i);
+    }
+  } else {
+    CircleEntity? body;
+    for (final e in part.decorations) {
+      if (e is CircleEntity && (body == null || e.radius > body.radius)) body = e;
+    }
+    for (var i = 0; i < part.decorations.length; i++) {
+      final e = part.decorations[i];
+      if (e is CircleEntity &&
+          !identical(e, body) &&
+          (e.center - body!.center).distance < body.radius) {
+        indices.add(i);
+      }
     }
   }
-  // With no profile the last circle is the round body, not a hole.
-  if (profile == null && indices.isNotEmpty) indices.removeLast();
   return indices[_index(hole, indices.length, 'hole')];
 }
 

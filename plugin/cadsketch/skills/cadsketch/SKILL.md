@@ -76,8 +76,9 @@ Things worth knowing:
   new design, not for a tweak.
 - Use `screenshot` to check your work when geometry matters, or when the user
   says "this corner" or "that hole" and you need to see what they mean.
-- `export_stl` saves next to the open `.cadsketch` file and returns the path.
-  With no file open the app offers a download instead.
+- `export_stl` gives the user a binary STL. When the plugin runs on their own
+  machine and a `.cadsketch` file is open, it is saved next to that file and
+  you get the path. Otherwise the app offers it as a download.
 
 These tools exist only while the editor is open. If they are not available,
 open it (`open_sketcher`, or have the user open the `.cadsketch` file) or work

@@ -5,6 +5,7 @@
 //   node fake-host.mjs <widget.html> <app-url> [sandbox-attr]
 import { chromium } from "playwright-core";
 import { readFile, writeFile } from "node:fs/promises";
+import { hostScript } from "./host.mjs";
 
 const [widgetPath, appUrl, sandbox = "allow-scripts allow-same-origin"] = process.argv.slice(2);
 const OUT = process.env.OUT ?? ".";
@@ -15,127 +16,6 @@ const FILE_TEXT = JSON.stringify({
   units: "mm",
   parts: [{ name: "plate", depth: 4, profile: [[0, 0], [80, 0], [80, 40], [0, 40]], holes: [[20, 20, 3]] }],
 });
-
-// Runs in the page: the host side of the JSON-RPC channel.
-function hostScript(widgetHtml, sandbox, prepare) {
-  const H = (window.H = { log: [], files: {}, etag: 1, context: null, writes: [], reads: 0, subscribed: [], pending: {}, rid: 1, serverCalls: [], downloads: [] });
-  const frame = document.createElement("iframe");
-  frame.setAttribute("sandbox", sandbox);
-  frame.style.cssText = "width:1180px;height:720px;border:0";
-  document.body.style.margin = "0";
-  document.body.appendChild(frame);
-  const send = (msg) => frame.contentWindow.postMessage({ jsonrpc: "2.0", ...msg }, "*");
-  H.notify = (method, params) => send({ method, params });
-  // Host -> app requests: how the model calls the tools the mounted app publishes.
-  H.request = (method, params) =>
-    new Promise((resolve) => {
-      const id = "h" + H.rid++;
-      H.pending[id] = resolve;
-      send({ id, method, params });
-    });
-  H.callTool = (name, args) => H.request("tools/call", { name, arguments: args ?? {} });
-  H.openFile = (name, text) => {
-    H.files["host-resource://" + name] = { name, text, etag: "v" + H.etag++ };
-    H.pendingFile = { name, resourceUri: "host-resource://" + name };
-  };
-  H.changeOnDisk = (uri, text) => {
-    H.files[uri].text = text;
-    H.files[uri].etag = "v" + H.etag++;
-    H.notify("notifications/resources/updated", { uri });
-  };
-  window.addEventListener("message", (e) => {
-    if (e.source !== frame.contentWindow) return;
-    const m = e.data;
-    if (!m || m.jsonrpc !== "2.0") return;
-    if (!m.method) {
-      // A response to one of our requests.
-      const done = H.pending[m.id];
-      if (done) {
-        delete H.pending[m.id];
-        done(m.result ?? { isError: true, content: [{ type: "text", text: m.error?.message ?? "error" }] });
-      }
-      return;
-    }
-    H.log.push(m.method);
-    const reply = (result) => m.id !== undefined && send({ id: m.id, result });
-    const fail = (message) => send({ id: m.id, error: { code: -32000, message } });
-    switch (m.method) {
-      case "ui/initialize":
-        return reply({
-          protocolVersion: "2026-01-26",
-          hostInfo: { name: "fake-codex", version: "0.0.1" },
-          hostCapabilities: {
-            experimental: { "openai/resource": {}, "openai/modelContext": {}, "openai/message": {} },
-            updateModelContext: { text: {}, structuredContent: {} },
-            message: { text: {} },
-            serverResources: {},
-            serverTools: {},
-            downloadFile: {},
-            openLinks: {},
-            logging: {},
-          },
-          hostContext: {
-            theme: "dark",
-            displayMode: "fullscreen",
-            availableDisplayModes: ["inline", "fullscreen"],
-            containerDimensions: { width: 1180, height: 720 },
-            platform: "desktop",
-          },
-        });
-      case "ui/notifications/initialized":
-        if (H.pendingFile) {
-          H.notify("ui/notifications/tool-input", { arguments: { file: H.pendingFile } });
-          H.notify("ui/notifications/tool-result", { content: [{ type: "text", text: "Opened." }], structuredContent: { file: H.pendingFile } });
-        } else {
-          H.notify("ui/notifications/tool-input", { arguments: {} });
-          H.notify("ui/notifications/tool-result", { content: [], structuredContent: { parts: [] } });
-        }
-        return;
-      case "resources/read": {
-        const f = H.files[m.params.uri];
-        if (!f) return fail("no such resource");
-        H.reads++;
-        H.lastReadMeta = m.params._meta;
-        return reply({ contents: [{ uri: m.params.uri, mimeType: "text/plain", text: f.text, _meta: { "openai/resource": { etag: f.etag, writable: !f.name.endsWith(".dxf") } } }] });
-      }
-      case "resources/subscribe":
-        H.subscribed.push(m.params.uri);
-        return reply({});
-      case "resources/unsubscribe":
-        return reply({});
-      case "openai/resources/write": {
-        const f = H.files[m.params.uri];
-        if (!f) return fail("no such resource");
-        if (m.params.ifMatch && m.params.ifMatch !== f.etag) return reply({ outcome: "conflict", etag: f.etag });
-        f.text = m.params.text;
-        f.etag = "v" + H.etag++;
-        H.writes.push({ uri: m.params.uri, ifMatch: m.params.ifMatch, text: m.params.text });
-        reply({ outcome: "saved", etag: f.etag });
-        // A real host also notifies subscribers that the file changed.
-        return H.notify("notifications/resources/updated", { uri: m.params.uri });
-      }
-      case "tools/call":
-        // The app calling a SERVER tool (save_export). A real host adds the
-        // opened file's path for the server; here we just answer as the server would.
-        H.serverCalls.push({ name: m.params.name, fileName: m.params.arguments?.fileName, bytes: (m.params.arguments?.blob ?? "").length });
-        if (m.params.name === "save_export" && H.pendingFile)
-          return reply({ content: [{ type: "text", text: "Saved" }], structuredContent: { path: "/workspace/" + m.params.arguments.fileName } });
-        return reply({ isError: true, content: [{ type: "text", text: "No open workspace file to save next to." }] });
-      case "ui/download-file":
-        H.downloads.push(m.params.contents?.[0]?.resource?.uri);
-        return reply({});
-      case "ui/update-model-context":
-        H.context = m.params;
-        return reply({ _meta: { "openai/modelContext": { updateId: "u" + Date.now() } } });
-      case "ping":
-        return reply({});
-      default:
-        if (m.id !== undefined) reply({});
-    }
-  });
-  new Function(prepare)(); // register the file BEFORE the widget boots
-  frame.srcdoc = widgetHtml;
-}
 
 const browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-sandbox", "--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const errors = [];

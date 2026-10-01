@@ -133,6 +133,32 @@ void main() {
     expect(modelContextOf(c).text, contains('diameter 12 mm'));
   });
 
+  test('a washer: the largest circle is the body, the inner one a hole', () {
+    final c = SketchController();
+    loadPartSpecs(
+        c,
+        partSpecsFromJson([
+          {
+            'name': 'washer',
+            'depth': 2,
+            'circle': [0, 0, 6],
+            'holes': [
+              [0, 0, 2.75]
+            ],
+          }
+        ]));
+    final ctx = modelContextOf(c);
+    final part = (ctx.structured['parts'] as List).single as Map;
+    expect(part['circle'], [0, 0, 6]);
+    expect(part['holes'], [
+      [0, 0, 2.75]
+    ]);
+    expect(ctx.text, contains('diameter 12 mm'));
+    expect(ctx.text, contains('1 hole'));
+    // And what is reported parses straight back in.
+    expect(partSpecsFromJson([part]).single.holes, hasLength(1));
+  });
+
   test('several parts load in order and an empty list clears the canvas', () {
     final c = SketchController();
     loadPartSpecs(

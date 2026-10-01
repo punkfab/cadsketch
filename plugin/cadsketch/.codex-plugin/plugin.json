@@ -32,14 +32,17 @@
     ],
     "websiteURL": "https://cadsketch.ai",
     "privacyPolicyURL": "https://cadsketch.ai/privacy/",
-    "composerIcon": "./assets/icon.svg",
-    "logo": "./assets/icon.svg",
+    "composerIcon": "./assets/composer-icon.svg",
+    "logo": "./assets/logo.svg",
     "defaultPrompt": [
       "Use CADSketch to draw a 60 x 30 mm L-bracket, 5 mm thick, with three M4 holes.",
       "Make the plate I have open 95 mm wide and add an M4 hole 8 mm in from each corner.",
       "Review the part I have open in CADSketch for manufacturability, then export an STL."
     ],
     "brandColor": "#0F2747",
-    "supportURL": "https://cadsketch.ai/support/"
+    "supportURL": "https://cadsketch.ai/support/",
+    "termsOfServiceURL": "https://cadsketch.ai/terms/",
+    "composerIconDark": "./assets/composer-icon-dark.svg",
+    "brandColorDark": "#8FB3DE"
   }
 }

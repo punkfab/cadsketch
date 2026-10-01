@@ -91,8 +91,14 @@ class _SceneViewState extends State<SceneView> {
       );
 
   // Scroll up (negative delta) zooms in. Clamped so you can't lose the model.
-  void _zoomBy(double dy) => setState(() {
+  /// Scroll-wheel zoom about the cursor: what is under [focal] stays under it.
+  /// The view draws at viewCentre + _pan + projected * scale, with scale
+  /// proportional to _zoom, so the pan scales about the cursor with it.
+  void _zoomBy(double dy, Offset focal, Size view) => setState(() {
+        final before = _zoom;
         _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.2, 12.0);
+        final fromCentre = focal - view.center(Offset.zero);
+        _pan = fromCentre - (fromCentre - _pan) * (_zoom / before);
       });
 
   /// All faces under the cursor, front-most first. Back-faces (normals pointing
@@ -319,7 +325,9 @@ class _SceneViewState extends State<SceneView> {
             children: [
               Listener(
                 onPointerSignal: (e) {
-                  if (e is PointerScrollEvent) _zoomBy(e.scrollDelta.dy);
+                  if (e is PointerScrollEvent) {
+                    _zoomBy(e.scrollDelta.dy, e.localPosition, size);
+                  }
                 },
                 onPointerDown: (e) {
                   if ((e.buttons & kSecondaryButton) != 0 ||

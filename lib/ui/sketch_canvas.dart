@@ -226,8 +226,14 @@ class _SketchCanvasState extends State<SketchCanvas> {
 
   final _focus = FocusNode();
 
-  void _zoomBy(double dy) => setState(() {
+  /// Scroll-wheel zoom about the cursor: the model point under [focal] stays
+  /// under it. (Zooming about a fixed anchor sent the drawing sliding away
+  /// whenever the view was panned or had been fitted to a part.) Same relation
+  /// as the pinch: _pan = paneCenter - anchor*z + _userPan.
+  void _zoomBy(double dy, Offset focal) => setState(() {
+        final under = _toModel(focal);
         _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(_minZoom, _maxZoom);
+        _userPan = focal - under * _zoom - _paneCenter + _anchor * _zoom;
       });
 
   void _resetView() => setState(() {
@@ -241,7 +247,18 @@ class _SketchCanvasState extends State<SketchCanvas> {
   int _handledFit = 0;
   void _applyPendingFit(Size pane) {
     final c = widget.controller;
-    if (c.fitViewRequests == _handledFit) return;
+    // The view belongs to the part it was set up on. A view that was fitted or
+    // panned for one part is meaningless on another: a face sketch is centred
+    // on its face, not where the body sat, so a carried-over pan put the face
+    // off screen and whatever was drawn landed far from it. Switching part
+    // with a moved view re-fits to the new part. The default view (zoom 1, no
+    // pan) is left alone, as it always was.
+    final active = c.active;
+    final switched = !identical(active, _viewPart);
+    final moved = (_zoom - 1).abs() > 1e-3 || _userPan != Offset.zero;
+    final refit = switched && _viewPart != null && moved;
+    _viewPart = active;
+    if (c.fitViewRequests == _handledFit && !refit) return;
     _handledFit = c.fitViewRequests;
     final b = c.activeBounds();
     if (b == null || pane.isEmpty) return;
@@ -252,6 +269,8 @@ class _SketchCanvasState extends State<SketchCanvas> {
     // _pan = paneCenter - anchor*zoom + userPan; put the content centre there.
     _userPan = (_anchor - b.center) * _zoom;
   }
+
+  Part? _viewPart;
 
   /// Movement below this (logical px) counts as a tap, not a stroke/drag.
   /// Generous enough to absorb stylus jitter on a tap.
@@ -643,7 +662,9 @@ class _SketchCanvasState extends State<SketchCanvas> {
                       onPointerUp: (e) => _pointerUp(e.pointer),
                       onPointerCancel: (e) => _pointerUp(e.pointer),
                       onPointerSignal: (e) {
-                        if (e is PointerScrollEvent) _zoomBy(e.scrollDelta.dy);
+                        if (e is PointerScrollEvent) {
+                          _zoomBy(e.scrollDelta.dy, e.localPosition);
+                        }
                       },
                       child: CustomPaint(
                         painter: _SketchPainter(widget.controller, _active,
@@ -843,11 +864,15 @@ class SketchController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Bounding box of the active part's sketch (vertices + circles), in model
-  /// coords; null when it is empty.
+  /// Bounding box of the active part's sketch (vertices + circles, and for a
+  /// face sketch the outline of the face it is on), in model coords; null when
+  /// it is empty.
   Rect? activeBounds() {
     Rect? box;
     void grow(Rect r) => box = box == null ? r : box!.expandToInclude(r);
+    for (final p in active.referenceLoop ?? const <Offset>[]) {
+      grow(Rect.fromCenter(center: p, width: 0, height: 0));
+    }
     for (final p in model.points) {
       grow(Rect.fromCenter(center: p, width: 0, height: 0));
     }
@@ -938,6 +963,15 @@ class SketchController extends ChangeNotifier {
 
     parts.add(part);
     activeIndex = parts.length - 1;
+    notifyListeners();
+  }
+
+  /// Adds already-built parts (a body and its face features, from a feature
+  /// tree import) and makes the first of them active.
+  void importParts(List<Part> imported) {
+    if (imported.isEmpty) return;
+    activeIndex = parts.length;
+    parts.addAll(imported);
     notifyListeners();
   }
 

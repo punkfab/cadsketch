@@ -63,8 +63,14 @@ class _AssemblyViewState extends State<AssemblyView> {
   }
 
   // Scroll up (negative delta) zooms in. Clamped so the model can't be lost.
-  void _zoomBy(double dy) => setState(() {
+  /// Scroll-wheel zoom about the cursor: what is under [focal] stays under it.
+  /// The view draws at viewCentre + _pan + projected * scale, with scale
+  /// proportional to _zoom, so the pan scales about the cursor with it.
+  void _zoomBy(double dy, Offset focal, Size view) => setState(() {
+        final before = _zoom;
         _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.1, 40.0);
+        final fromCentre = focal - view.center(Offset.zero);
+        _pan = fromCentre - (fromCentre - _pan) * (_zoom / before);
       });
 
   void _tap(Offset p, List<_PartScene> scenes) {
@@ -142,7 +148,8 @@ class _AssemblyViewState extends State<AssemblyView> {
                         return Listener(
                           onPointerSignal: (e) {
                             if (e is PointerScrollEvent) {
-                              _zoomBy(e.scrollDelta.dy);
+                              _zoomBy(e.scrollDelta.dy, e.localPosition,
+                                  Size(c.maxWidth, c.maxHeight));
                             }
                           },
                           onPointerDown: (e) {

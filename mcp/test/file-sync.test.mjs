@@ -42,6 +42,15 @@ test("the canvas becomes file parts, without the editor-only fields", () => {
   assert.equal(canonical(parts), canonical([bracket]));
 });
 
+test("lengths are written to the micron, so solver noise does not churn the file", () => {
+  const noisy = reported({ profile: [[0, 0], [94.99925, 0], [94.998875, 40.0000004], [-0.0000002, 40]], holes: [[8.00004, 10, 2.25]], depth: 5.0000001 });
+  const { parts } = partsFromState({ parts: [noisy] });
+  assert.deepEqual(parts[0].profile, [[0, 0], [94.999, 0], [94.999, 40], [0, 40]]);
+  assert.deepEqual(parts[0].holes, [[8, 10, 2.25]]);
+  assert.equal(parts[0].depth, 5);
+  assert.ok(!serializeFile(parts).includes("-0"), "no negative zero in the file");
+});
+
 test("an untouched placeholder part is nothing, not a blocker", () => {
   const { parts, blocker } = partsFromState({ parts: [{ name: "Part 1", depth: 100, closed: false, holes: [], segments: 0 }] });
   assert.deepEqual(parts, []);

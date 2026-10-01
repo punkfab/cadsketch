@@ -77,14 +77,20 @@ export function partsFromState(structured: Record<string, unknown>): { parts: Fi
     }
     parts.push({
       name,
-      depth: Number(raw.depth),
-      ...(raw.profile ? { profile: raw.profile as number[][] } : {}),
-      ...(raw.circle && !raw.profile ? { circle: raw.circle as number[] } : {}),
-      holes,
+      depth: micron(Number(raw.depth)),
+      ...(raw.profile ? { profile: (raw.profile as number[][]).map(microns) } : {}),
+      ...(raw.circle && !raw.profile ? { circle: microns(raw.circle as number[]) } : {}),
+      holes: holes.map(microns),
     });
   }
   return { parts, blocker };
 }
+
+// A file holds lengths to the micron. The constraint solver converges to about
+// that, so finer digits are noise that would churn the file on every solve.
+// (Bulge, the third number of a profile vertex, is a ratio and rounds the same.)
+const micron = (v: number) => Math.round(v * 1000) / 1000 + 0; // + 0 turns -0 into 0
+const microns = (v: number[]) => v.map(micron);
 
 /** Stable comparison key for "did the canvas change?". */
 export function canonical(parts: FilePart[]): string {

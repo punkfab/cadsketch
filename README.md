@@ -29,6 +29,14 @@ codex plugin marketplace add punkfab/cadsketch
 codex plugin add cadsketch@cadsketch
 ```
 
+To update an existing install, refresh Codex's copy of this repository, then
+install again (the same two steps do not fetch a newer version by themselves):
+
+```sh
+codex plugin marketplace upgrade
+codex plugin add cadsketch@cadsketch
+```
+
 Restart the desktop app, then click **CADSketch** in the sidebar, or ask:
 
 > Create bracket.cadsketch for a 60 × 30 mm L-bracket, 5 mm thick, with three

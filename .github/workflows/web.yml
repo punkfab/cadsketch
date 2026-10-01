@@ -75,6 +75,9 @@ jobs:
           rm -rf public && mkdir -p public
           cp -r landing/. public/
           cp -r build/web public/app
+          # The embedded editor reports itself as /app/embed/ (see web/index.html);
+          # serve the same page there so a reload inside a host still loads.
+          mkdir -p public/app/embed && cp build/web/index.html public/app/embed/index.html
 
       - name: Publish to the site branch
         uses: peaceiris/actions-gh-pages@v4

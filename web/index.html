@@ -37,6 +37,22 @@
        Order matters: the emscripten factory first, then the glue. -->
   <script src="kernel/sketch_kernel.js"></script>
   <script src="kernel/kernel_glue.js"></script>
+
+  <!-- Visit counting (Cloudflare Web Analytics, no cookies). This file is only
+       part of the web build, so the iOS app has no analytics at all.
+       The counter drops the query string, so an editor embedded in an AI app
+       (?mcp=1) would look like the standalone app. Give it its own path first;
+       <base href> keeps every asset resolving from /app/. Where the browser
+       refuses (a sandbox with no origin), it simply counts as /app/. -->
+  <script>
+    try {
+      if (new URLSearchParams(location.search).get('mcp') === '1' &&
+          !/\/embed\/$/.test(location.pathname)) {
+        history.replaceState(null, '', new URL('embed/', document.baseURI).pathname + location.search);
+      }
+    } catch (e) {}
+  </script>
+  <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "2f2d9eaebfd845cc8366ce51693ad086"}'></script>
 </head>
 <body>
   <!--

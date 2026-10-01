@@ -36634,7 +36634,7 @@ function describe3(r) {
 
 // src/server.ts
 var APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/app/";
-var SERVER_VERSION = "0.3.0";
+var SERVER_VERSION = "0.3.1";
 var WIDGET_URI = "ui://cadsketch/sketcher-v4.html";
 var LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
 var FILE_EXTENSIONS = [".cadsketch", ".dxf"];

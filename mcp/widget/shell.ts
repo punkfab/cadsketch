@@ -65,7 +65,7 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let whenConnected: Promise<void> = Promise.resolve(); // set at the bottom, once connect() is called
 
 // `tools`: this app publishes its own tools to the model while it is mounted.
-const app = new App({ name: "CADSketch", version: "0.3.0" }, { tools: { listChanged: true }, availableDisplayModes: ["inline", "fullscreen"] });
+const app = new App({ name: "CADSketch", version: "0.3.1" }, { tools: { listChanged: true }, availableDisplayModes: ["inline", "fullscreen"] });
 const openai = new OpenAIExtensions(app);
 
 function setStatus(text: string) {

@@ -22,7 +22,7 @@ import { describe, report, structuralError, type PartInput } from "./geometry.js
 /** Where the CADSketch web build is served. Must be the build with the host bridge. */
 export const APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/app/";
 
-export const SERVER_VERSION = "0.3.0";
+export const SERVER_VERSION = "0.3.1";
 
 // Bump the version in the URI when the widget changes in a breaking way: hosts
 // cache the template by URI. Earlier URIs stay readable (same page) for hosts

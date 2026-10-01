@@ -1,6 +1,6 @@
 {
   "name": "cadsketch",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Sketch, edit and review flat mechanical parts in CADSketch, right inside Codex. The agent can draw, edit the open sketch in place, set dimensions and constraints, see the result, and export STL.",
   "author": {
     "name": "punkfab",

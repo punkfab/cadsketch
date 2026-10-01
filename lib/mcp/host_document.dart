@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import '../import/featuretree_import.dart';
 import '../sketch/dxf.dart';
 import '../sketch/model.dart';
 import '../ui/sketch_canvas.dart';
@@ -62,6 +65,27 @@ void loadDxfText(SketchController controller, String name, String text) {
   controller.removePart(0); // drop the placeholder
   controller.setActive(0);
   controller.requestFitView();
+}
+
+/// Replaces the document with a featuretree IR file the host opened (the same
+/// reader as the app's own "Import feature tree"). Returns what came in and
+/// what was skipped, for the host to tell the user and the model.
+List<IrImport> loadFeatureIrText(SketchController controller, String text) {
+  final Object? json;
+  try {
+    json = jsonDecode(text);
+  } on FormatException catch (e) {
+    throw IrImportException('not valid JSON: ${e.message}');
+  }
+  final bodies = importFeatureIrDocument(json);
+  controller.newProject();
+  for (final body in bodies) {
+    controller.importParts(body.parts);
+  }
+  controller.removePart(0); // drop the placeholder
+  controller.setActive(0);
+  controller.requestFitView();
+  return bodies;
 }
 
 /// The document as model-visible context.

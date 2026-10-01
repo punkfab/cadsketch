@@ -17,8 +17,8 @@ import '../sketch/part.dart';
 // arc leaving that vertex (positive = counter-clockwise). A round body uses
 // "circle": [cx, cy, r] instead of a profile.
 //
-// It is deliberately the same notation as the featuretree IR (polys / circles),
-// and reading a Part back out reuses [partToIr], so the model sees exactly the
+// It is deliberately the same notation as the featuretree IR (polys / circles;
+// only the bulge sign differs, featuretree's being the reverse of DXF), and reading a Part back out reuses [partToIr], so the model sees exactly the
 // features the FreeCAD / build123d export would produce.
 //
 // Pure Dart (no Flutter widgets, no FFI, no web): runs in `flutter test` and on
@@ -203,7 +203,13 @@ Map<String, dynamic> partToSpecJson(Part part) {
     final polys = f['polys'] as List;
     final circles = f['circles'] as List;
     if (name == 'profile') {
-      if (polys.isNotEmpty) profile = polys.first as List;
+      // The host format uses the DXF bulge sign; the IR's is the reverse.
+      if (polys.isNotEmpty) {
+        profile = [
+          for (final v in polys.first as List)
+            (v as List).length > 2 ? [v[0], v[1], -(v[2] as num)] : v,
+        ];
+      }
       if (polys.isEmpty && circles.isNotEmpty) circle = circles.first as List;
     } else if (circles.isNotEmpty) {
       holes.add(circles.first);

@@ -4,6 +4,7 @@ import 'dart:js_interop';
 
 import 'package:web/web.dart' as web;
 
+import '../import/featuretree_import.dart';
 import '../sketch/dxf.dart';
 import '../ui/sketch_canvas.dart';
 import 'host_capture.dart';
@@ -27,6 +28,8 @@ import 'part_spec.dart';
 //   app  -> shell   "cadsketch>host:" + {"type":"state","structured":{},"text":""}
 //   shell -> app    "cadsketch>app:"  + {"type":"load","parts":[...],"loadId":1}
 //   shell -> app    "cadsketch>app:"  + {"type":"loadDxf","name":"","text":""}
+//   shell -> app    "cadsketch>app:"  + {"type":"loadIr","text":""}
+//   app  -> shell   "cadsketch>host:" + {"type":"imported","bodies":[...]}
 //   shell -> app    "cadsketch>app:"  + {"type":"call","id":1,"op":"add_hole","args":{}}
 //   app  -> shell   "cadsketch>host:" + {"type":"result","id":1,"ok":true,"value":{}}
 
@@ -121,6 +124,20 @@ class HostBridge {
           _loadId = msg['loadId'];
           _lastSent = null;
           _onDocumentChanged();
+        case 'loadIr':
+          final text = msg['text'];
+          if (text is! String || text.length > 20 * 1024 * 1024) {
+            throw const PartSpecException('feature tree text missing or too large');
+          }
+          final bodies = loadFeatureIrText(_controller, text);
+          _loadId = msg['loadId'];
+          _lastSent = null;
+          _post({
+            'type': 'imported',
+            'loadId': msg['loadId'],
+            'bodies': [for (final b in bodies) b.toJson()],
+          });
+          _onDocumentChanged();
         case 'call':
           _call(msg['id'], (msg['op'] ?? '').toString(), msg['args']);
         case 'ping':
@@ -130,6 +147,8 @@ class HostBridge {
       }
     } on PartSpecException catch (e) {
       _post({'type': 'error', 'message': e.message});
+    } on IrImportException catch (e) {
+      _post({'type': 'error', 'message': 'Feature tree: ${e.message}'});
     } on DxfException catch (e) {
       _post({'type': 'error', 'message': 'DXF: ${e.message}'});
     } catch (e) {

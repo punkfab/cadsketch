@@ -17,7 +17,7 @@ It is the same app. Nothing here forks the editor:
  widget = mcp/widget/shell.{html,ts}     speaks MCP Apps + OpenAI extensions
    │      └── <iframe>  https://cadsketch.ai/app/?mcp=1   ← the normal Flutter web build
    │   private string messages (lib/mcp/host_bridge_web.dart)
-   │      shell → app   load / loadDxf   content to show
+   │      shell → app   load / loadDxf / loadIr   content to show
    │      shell → app   call             one editing command (lib/mcp/host_commands.dart)
    │      app → shell   ready            the editor is up
    │      app → shell   state            what is on the canvas now
@@ -48,7 +48,7 @@ adding `_meta["openai/ui"].entrypoints` to a tool:
 | --- | --- | --- |
 | `global` | `open_sketcher` | **CADSketch** in the sidebar, opening as a full tab |
 | `thread` | `open_sketcher` | a panel beside the current conversation |
-| `file` (`.cadsketch`, `.dxf`) | `open_file` | those files open in the editor |
+| `file` (`.cadsketch`, `.dxf`, `.ir.json`) | `open_file` | those files open in the editor |
 | (model tool) | `draw_parts` | the agent draws parts inline |
 
 File viewers are desktop-only; sidebar and thread entrypoints also work on the
@@ -108,6 +108,9 @@ its ordinary file tools. While a file is open in the editor:
 - work the format can't hold (an open sketch, a face feature, a mesh) blocks
   saving and says so, instead of being dropped;
 - `.dxf` opens read-only.
+- `.ir.json` (a [featuretree](https://github.com/punkfab/featuretree) feature
+  tree) opens read-only through `lib/import/featuretree_import.dart`. Features
+  the editor can't show are named in the header and in the model's context.
 
 ## The part format
 
@@ -157,9 +160,9 @@ cd mcp && node e2e/fake-host.mjs ../plugin/cadsketch/dist/widget.html http://loc
 # add "allow-scripts" as a last argument to test a sandbox with no origin
 ```
 
-It checks 30 things: a file opens and is reported to the model, opening does
+It checks 34 things: a file opens and is reported to the model, opening does
 not rewrite it, a dragged vertex is saved with the right etag, the save's echo
-does not loop, an external change reloads the editor, `.dxf` is never written,
+does not loop, an external change reloads the editor, `.dxf` is never written, a feature tree opens with its skipped features named,
 the sidebar canvas fills its container, and the live tools: the tool list, a
 hole added by tool and saved to the file, a driven dimension that keeps the
 rectangle square, constraints, undo, a helpful error, a real screenshot, and

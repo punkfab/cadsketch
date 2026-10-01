@@ -36634,10 +36634,10 @@ function describe3(r) {
 
 // src/server.ts
 var APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/app/";
-var SERVER_VERSION = "0.3.1";
+var SERVER_VERSION = "0.4.0";
 var WIDGET_URI = "ui://cadsketch/sketcher-v4.html";
 var LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
-var FILE_EXTENSIONS = [".cadsketch", ".dxf"];
+var FILE_EXTENSIONS = [".cadsketch", ".dxf", ".ir.json"];
 var vertex = external_exports.array(external_exports.number()).min(2).max(3).describe("[x, y] or [x, y, bulge]. bulge = tan(theta/4) of the arc from this vertex to the next; positive bulges counter-clockwise, 1 is a semicircle, 0 or omitted is a straight edge.");
 var circle = external_exports.array(external_exports.number()).length(3).describe("[center_x, center_y, radius] in mm");
 var part = external_exports.object({
@@ -36739,7 +36739,7 @@ function createServer({ widgetHtml, iconSvg, local = false }) {
     "open_file",
     {
       title: "CADSketch",
-      description: 'Open a .cadsketch or .dxf file from the workspace in the CADSketch editor. A .cadsketch file is JSON: {"cadsketch": 1, "units": "mm", "parts": [...]} with parts in the draw_parts format; edits made in the editor are saved back to the file, and the editor reloads when the file changes on disk. .dxf files open read-only.',
+      description: `Open a .cadsketch, .dxf or .ir.json file from the workspace in the CADSketch editor. A .cadsketch file is JSON: {"cadsketch": 1, "units": "mm", "parts": [...]} with parts in the draw_parts format; edits made in the editor are saved back to the file, and the editor reloads when the file changes on disk. .dxf files open read-only. So do .ir.json feature trees (the punkfab/featuretree IR): the body and the features CADSketch can show appear on the canvas, and the ones it can't are named.`,
       inputSchema: fileInput.shape,
       annotations: READ_ONLY,
       _meta: ui([{ type: "file", extensions: FILE_EXTENSIONS }])

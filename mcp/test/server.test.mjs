@@ -59,7 +59,7 @@ test("extension entrypoints: sidebar + thread panel, and a file viewer", async (
   const { tools } = await client.listTools();
   const by = Object.fromEntries(tools.map((t) => [t.name, t]));
   assert.deepEqual(by.open_sketcher._meta["openai/ui"].entrypoints, [{ type: "global" }, { type: "thread" }]);
-  assert.deepEqual(by.open_file._meta["openai/ui"].entrypoints, [{ type: "file", extensions: [".cadsketch", ".dxf"] }]);
+  assert.deepEqual(by.open_file._meta["openai/ui"].entrypoints, [{ type: "file", extensions: [".cadsketch", ".dxf", ".ir.json"] }]);
   // The model-facing tool is not an entrypoint.
   assert.equal(by.draw_parts._meta["openai/ui"], undefined);
   // Entrypoint tools must accept what the host passes: {} and a FileInput.

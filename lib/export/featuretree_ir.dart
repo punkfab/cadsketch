@@ -4,6 +4,7 @@ import 'dart:ui' show Offset;
 import '../sketch/entities.dart';
 import '../sketch/model.dart';
 import '../sketch/part.dart';
+import '../sketch/solid.dart';
 
 // Bridge: ai-sketcher -> featuretree (punkfab/featuretree) feature-IR.
 //
@@ -49,20 +50,27 @@ typedef FeatureIr = Map<String, dynamic>;
 FeatureIr partToIr(Part part, {double scale = 1.0}) {
   final features = <Map<String, dynamic>>[];
   final s = part.sketch;
+  Offset toIr(Offset p) => Offset(p.dx * scale, -p.dy * scale);
 
-  final loop = s.closedLoop();
   final circles = part.decorations.whereType<CircleEntity>().toList();
+  // Every closed loop, largest first: the largest is the outline, a loop inside
+  // it is a hole (the rule Part.profileWithHoles builds the solid by).
+  final loops = _loopsByArea(s);
 
-  if (loop != null && loop.length >= 3) {
-    final wire = _wireWithBulges(s, loop, scale);
-    features.add(_sketch('profile', polys: [wire]));
+  if (loops.isNotEmpty) {
+    final outer = loops.first;
+    features.add(_sketch('profile', polys: [
+      _wire(s, outer.loop, toIr, mirrored: true),
+      for (final l in loops.skip(1))
+        if (_pointInPolygon(outer.outline, l.outline.first))
+          _wire(s, l.loop, toIr, mirrored: true),
+    ]));
     features.add(_pad('body', 'profile', _r(part.depth * scale)));
 
     // Interior circles become drilled through-holes, in draw order.
-    final profileTess = s.closedProfile()!; // non-null when closedLoop is
     var hi = 0;
     for (final c in circles) {
-      if (!_pointInPolygon(profileTess, c.center)) continue;
+      if (!_pointInPolygon(outer.outline, c.center)) continue;
       final sk = 'hole${hi}_sketch';
       features.add(_sketch(sk, circles: [_circle(c, scale)]));
       features.add(_pocket('hole$hi', sk, through: true));
@@ -87,6 +95,146 @@ FeatureIr partToIr(Part part, {double scale = 1.0}) {
   }
 
   return {'name': _slug(part.name), 'features': features};
+}
+
+/// A whole body: the base [root] plus every face feature sketched on it, in
+/// [parts] order. `dropped` names the features the IR has no way to say.
+///
+///  * a boss on the top / bottom of the running solid -> face sketch + `pad`
+///  * a cut from the top / bottom                     -> face sketch + `pocket`
+///  * any other cut (mid-level, or into a side face)  -> `prism_cut`
+///  * a boss anywhere else has no IR equivalent and is dropped.
+///
+/// "Top" and "bottom" are the solid's highest and lowest Z as it stands when
+/// the feature is applied — featuretree's rule for a face-attached sketch.
+({FeatureIr ir, List<String> dropped}) bodyToIr(Part root, Iterable<Part> parts,
+    {double scale = 1.0}) {
+  final ir = partToIr(root, scale: scale);
+  final features = (ir['features'] as List).cast<Map<String, dynamic>>();
+  final dropped = <String>[];
+  if (features.isEmpty) return (ir: ir, dropped: dropped);
+
+  final used = {for (final f in features) f['name'] as String};
+  String unique(String base) {
+    var name = base, n = 2;
+    while (!used.add(name)) {
+      name = '${base}_${n++}';
+    }
+    return name;
+  }
+
+  // World is the canvas frame (Y down); the IR is Y up.
+  List<double> cad(Vec3 w) => [w.x * scale, -w.y * scale, w.z * scale];
+  const eps = 1e-6;
+  var zMin = 0.0, zMax = root.depth * scale;
+
+  for (final p in parts) {
+    if (identical(p, root) || p.referenceLoop == null || !identical(p.root, root)) continue;
+    final loops = _loopsByArea(p.sketch);
+    final circles = p.decorations.whereType<CircleEntity>().toList()
+      ..sort((a, b) => b.radius.compareTo(a.radius));
+    if (loops.isEmpty && circles.isEmpty) continue; // nothing drawn yet
+
+    final plane = p.plane;
+    final depth = p.depth * scale;
+    final cut = p.isSubtractive;
+    // The way the material goes (or is taken), and the sketch's frame, in IR
+    // space. y = n × x is the frame featuretree gives a placed profile; `s`
+    // says whether the sketch's own v runs along it or against it.
+    final dir = cad(plane.normal * p.dirSign).map((c) => c / scale).toList();
+    final x = cad(plane.u).map((c) => c / scale).toList();
+    final v = cad(plane.v).map((c) => c / scale).toList();
+    final y = [
+      dir[1] * x[2] - dir[2] * x[1],
+      dir[2] * x[0] - dir[0] * x[2],
+      dir[0] * x[1] - dir[1] * x[0],
+    ];
+    final s = (v[0] * y[0] + v[1] * y[1] + v[2] * y[2]) < 0 ? -1.0 : 1.0;
+    final origin = cad(plane.origin);
+    final z = origin[2];
+    final axial = dir[2].abs() > 1 - 1e-6;
+    final name = unique(_slug(p.name));
+
+    // Outline + the loops inside it, in the frame given by [to].
+    List<List<List<num>>> polys(Offset Function(Offset) to, bool mirrored) {
+      if (loops.isEmpty) return const [];
+      final outer = loops.first;
+      return [
+        _wire(p.sketch, outer.loop, to, mirrored: mirrored),
+        for (final l in loops.skip(1))
+          if (_pointInPolygon(outer.outline, l.outline.first))
+            _wire(p.sketch, l.loop, to, mirrored: mirrored),
+      ];
+    }
+
+    // On the top or bottom face of the running solid: global XY coordinates.
+    final onTop = axial && (z - zMax).abs() <= eps && dir[2] * (cut ? -1 : 1) > 0;
+    final onBottom = axial && (z - zMin).abs() <= eps && dir[2] * (cut ? -1 : 1) < 0;
+    if (onTop || onBottom) {
+      Offset global(Offset q) {
+        final w = cad(plane.to3d(q));
+        return Offset(w[0], w[1]);
+      }
+
+      // Seen in global XY the sketch is mirrored when its normal points -Z in
+      // IR space; IR space is itself the mirror of the world.
+      final mirrored = plane.normal.z > 0;
+      final sk = unique('${name}_sketch');
+      features.add(_sketch(
+        sk,
+        on: {'face_of': 'body', 'side': onTop ? 'top' : 'bottom'},
+        polys: polys(global, mirrored),
+        circles: [
+          if (loops.isEmpty)
+            () {
+              final c = global(circles.first.center);
+              return <num>[_r(c.dx), _r(c.dy), _r(circles.first.radius * scale)];
+            }(),
+        ],
+      ));
+      if (cut) {
+        final through = depth >= (zMax - zMin) - eps;
+        features.add(_pocket(name, sk,
+            through: through, length: through ? null : _r(depth)));
+      } else {
+        features.add(_pad(name, sk, _r(depth)));
+        if (onTop) zMax += depth;
+        if (onBottom) zMin -= depth;
+      }
+      continue;
+    }
+
+    if (!cut) {
+      dropped.add('${p.name}: a boss that is not on the top or bottom of the '
+          'body has no feature-tree equivalent');
+      continue;
+    }
+
+    // Anything else that removes material: a placed cut.
+    Offset local(Offset q) => Offset(q.dx * scale, s * q.dy * scale);
+    features.add({
+      'kind': 'prism_cut',
+      'name': name,
+      'origin': [for (final c in origin) _r(c)],
+      'normal': [for (final c in dir) _r(c)],
+      'xdir': [for (final c in x) _r(c)],
+      'depth': _r(depth),
+      'polys': loops.isNotEmpty
+          ? polys(local, s < 0)
+          : [
+              () {
+                // A circle as two half-circle arcs (bulge 1).
+                final c = local(circles.first.center);
+                final r = circles.first.radius * scale;
+                return <List<num>>[
+                  [_r(c.dx - r), _r(c.dy), 1],
+                  [_r(c.dx + r), _r(c.dy), 1],
+                ];
+              }()
+            ],
+    });
+  }
+  return (ir: ir, dropped: dropped);
 }
 
 // --- IR builders (shapes match featuretree/ir.py exactly) -------------------
@@ -133,27 +281,50 @@ Map<String, dynamic> _pocket(String name, String sketch,
 
 /// The ordered profile wire for [loop], each vertex `[x, y]` or `[x, y, bulge]`
 /// where an edge is a circular arc. Bulge is the DXF factor `tan(theta/4)` for
-/// the edge leaving that vertex (what featuretree's `_poly_face` expects).
-List<List<num>> _wireWithBulges(ParametricSketch s, List<int> loop, double scale) {
+/// the edge leaving that vertex, in featuretree's sign (see below).
+/// [to] maps a sketch point into the target 2D frame; [mirrored] says that map
+/// is a reflection (screen Y-down -> CAD Y-up), which reverses arc sense.
+List<List<num>> _wire(ParametricSketch s, List<int> loop, Offset Function(Offset) to,
+    {required bool mirrored}) {
   final wire = <List<num>>[];
   for (var i = 0; i < loop.length; i++) {
     final ai = loop[i];
     final bi = loop[(i + 1) % loop.length];
-    final p = s.points[ai];
+    final p = to(s.points[ai]);
     final seg = _segmentBetween(s, ai, bi);
     if (seg != null && seg.isArc) {
       // Directed sweep along the loop (negate if the segment runs b->a here).
       final forward = seg.a == ai;
       final sweep = forward ? seg.arc!.sweep : -seg.arc!.sweep;
-      // Y is flipped below, a reflection that reverses arc orientation, so the
-      // bulge sign flips too.
-      final bulge = -math.tan(sweep / 4);
-      wire.add([_r(p.dx * scale), _r(-p.dy * scale), _r(bulge)]);
+      // featuretree builds a positive bulge on the LEFT of the edge (a
+      // clockwise arc), the opposite of the DXF sign its docs name. Every
+      // backend agrees with that, so that is the IR: the DXF bulge, negated.
+      final bulge = -math.tan((mirrored ? -sweep : sweep) / 4);
+      wire.add([_r(p.dx), _r(p.dy), _r(bulge)]);
     } else {
-      wire.add([_r(p.dx * scale), _r(-p.dy * scale)]);
+      wire.add([_r(p.dx), _r(p.dy)]);
     }
   }
   return wire;
+}
+
+/// Every closed loop of [s] with its tessellated outline, largest area first.
+List<({List<int> loop, List<Offset> outline})> _loopsByArea(ParametricSketch s) {
+  final loops = s.allClosedLoops();
+  final outlines = s.allProfiles();
+  final all = [
+    for (var i = 0; i < loops.length; i++)
+      if (outlines[i].length >= 3) (loop: loops[i], outline: outlines[i]),
+  ];
+  double area(List<Offset> p) {
+    var a = 0.0;
+    for (var i = 0, j = p.length - 1; i < p.length; j = i++) {
+      a += p[j].dx * p[i].dy - p[i].dx * p[j].dy;
+    }
+    return a.abs();
+  }
+
+  return all..sort((a, b) => area(b.outline).compareTo(area(a.outline)));
 }
 
 List<num> _circle(CircleEntity c, double scale) =>

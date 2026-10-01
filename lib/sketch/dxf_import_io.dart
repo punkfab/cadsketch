@@ -6,12 +6,14 @@ import 'package:file_picker/file_picker.dart';
 /// Reads a DXF: from [path] when given (desktop CLI / tests), otherwise via
 /// the native document picker (#11 — the old "type a path" prompt was a dead
 /// end on iOS, where there's no path a user can type). Returns null if the
-/// picker was cancelled.
-Future<({String name, String text})?> readDxf({String? path}) async {
+/// picker was cancelled. [extensions] lets the same picker open other text
+/// formats (a feature tree's .json).
+Future<({String name, String text})?> readDxf(
+    {String? path, List<String> extensions = const ['dxf']}) async {
   var p = path?.trim();
   if (p == null || p.isEmpty) {
     final res = await FilePicker.pickFiles(
-        type: FileType.custom, allowedExtensions: ['dxf'], withData: true);
+        type: FileType.custom, allowedExtensions: extensions, withData: true);
     if (res == null || res.files.isEmpty) return null;
     final f = res.files.single;
     final bytes = f.bytes;

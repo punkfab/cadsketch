@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'export/featuretree_export.dart';
+import 'import/featuretree_import.dart';
 import 'export/mesh_export.dart';
 import 'export/stl.dart';
 import 'export/stl_export.dart';
@@ -116,6 +118,35 @@ class _SketchHomeState extends State<SketchHome> {
     }
   }
 
+  Future<void> _importFeatureTree() async {
+    try {
+      final src = await readDxf(extensions: const ['json']);
+      if (src == null) return; // cancelled
+      final bodies = importFeatureIrDocument(jsonDecode(src.text));
+      for (final body in bodies) {
+        _controller.importParts(body.parts);
+      }
+      _controller.requestFitView();
+      if (!mounted) return;
+      final skipped = [for (final b in bodies) ...b.skipped];
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          duration: Duration(seconds: skipped.isEmpty ? 4 : 10),
+          content: Text([
+            for (final b in bodies) b.summary(),
+            if (skipped.isNotEmpty) 'Skipped: ${skipped.take(4).join('; ')}'
+                '${skipped.length > 4 ? '; …' : ''}',
+          ].join('\n'))));
+    } on FormatException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Not valid JSON: ${e.message}')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Feature tree import failed: $e')));
+    }
+  }
+
   Future<void> _importDxf() async {
     // Every platform opens a picker now: the browser file input on web, the
     // native document picker elsewhere (#11).
@@ -195,11 +226,15 @@ class _SketchHomeState extends State<SketchHome> {
             'Analyse the active part → featuretree IR (→ editable FreeCAD tree)',
             Icons.account_tree_outlined, () async {
           try {
-            final where = await writeFeatureTreeIr(_controller.active);
+            final out = await writeFeatureTreeIr(
+                _controller.active.root, _controller.parts);
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Exported $where — featuretree/gen.py turns it '
-                    'into an editable FreeCAD tree')));
+                content: Text(out.dropped.isEmpty
+                    ? 'Exported ${out.where} — featuretree/gen.py turns it '
+                        'into an editable FreeCAD tree'
+                    : 'Exported ${out.where}, without: '
+                        '${out.dropped.join('; ')}')));
           } catch (e) {
             if (!mounted) return;
             ScaffoldMessenger.of(context)
@@ -229,6 +264,11 @@ class _SketchHomeState extends State<SketchHome> {
                 .showSnackBar(SnackBar(content: Text('STL export failed: $e')));
           }
         }),
+        _Command(
+            'Import feature tree (IR)…',
+            'Open a featuretree .ir.json as a body with its face features',
+            Icons.account_tree_outlined,
+            _importFeatureTree),
         _Command('Import DXF…', 'Import a DXF drawing as a new sketch part',
             Icons.file_open_outlined, _importDxf),
         _Command('New project', 'Start over: clears every part, mate, and parameter',

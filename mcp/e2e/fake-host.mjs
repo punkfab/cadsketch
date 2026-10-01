@@ -110,6 +110,31 @@ const waitCtx = async (page, pred, ms = 40000) => {
   await page.close();
 }
 
+// ---- 4b. a featuretree .ir.json opens read-only, and says what it left out --
+{
+  const ir = {
+    name: "block",
+    features: [
+      { kind: "sketch", name: "profile", plane: "XY", on: null, circles: [], rects: [[60, 40, 0, 0]], polys: [] },
+      { kind: "pad", name: "body", sketch: "profile", length: 20, symmetric: false },
+      { kind: "sketch", name: "drill_sk", plane: "XY", on: null, circles: [[-20, 0, 3]], rects: [], polys: [] },
+      { kind: "pocket", name: "drill", sketch: "drill_sk", through: true, length: null },
+      { kind: "sketch", name: "recess_sk", plane: "XY", on: { face_of: "body", side: "top" }, circles: [], rects: [[20, 16, 10, 0]], polys: [] },
+      { kind: "pocket", name: "recess", sketch: "recess_sk", through: false, length: 6 },
+      { kind: "fillet", name: "soften", radius: 1, select: { circles: "top_outer" } },
+    ],
+  };
+  const page = await newHost(`window.H.openFile("block.ir.json", ${JSON.stringify(JSON.stringify(ir))})`);
+  const text = await waitCtx(page, (t) => t.includes("soften"));
+  check("a feature tree opens as a body with its hole", /block: closed profile, 4 vertices, 60 x 40 mm, extruded 20 mm, 1 hole/.test(text), text.split("\n")[1]);
+  check("its blind pocket is a cut feature on the body", /recess: closed profile, 4 vertices, 20 x 16 mm, extruded 6 mm.*difference feature on a face of block/.test(text), text.split("\n")[2]);
+  check("the model is told which features are not shown", /soften \(fillet\)/.test(text), text.split("\n").pop());
+  await page.waitForTimeout(2500);
+  check("a feature tree is never written", (await page.evaluate(() => window.H.writes.length)) === 0);
+  await page.screenshot({ path: `${OUT}/fake-ir.png` });
+  await page.close();
+}
+
 // ---- 4. a .dxf opens read-only ---------------------------------------------
 {
   const dxf = "0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n90\n4\n70\n1\n10\n0\n20\n0\n10\n50\n20\n0\n10\n50\n20\n25\n10\n0\n20\n25\n0\nCIRCLE\n10\n25\n20\n12.5\n40\n4\n0\nENDSEC\n0\nEOF\n";

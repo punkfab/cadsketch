@@ -11,7 +11,7 @@ import { describe, report, structuralError, type PartInput } from "./geometry.js
 // three tools that open it:
 //   draw_parts     the model draws parts; they open in the editor, editable
 //   open_sketcher  an empty canvas; also the SIDEBAR app and the THREAD panel
-//   open_file      the FILE viewer/editor for .cadsketch and .dxf files
+//   open_file      the FILE viewer/editor for .cadsketch, .dxf and .ir.json files
 // Whatever is on the canvas is reported back to the model as context by the
 // widget (ui/update-model-context), so it can review or revise the design.
 //
@@ -22,7 +22,7 @@ import { describe, report, structuralError, type PartInput } from "./geometry.js
 /** Where the CADSketch web build is served. Must be the build with the host bridge. */
 export const APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/app/";
 
-export const SERVER_VERSION = "0.3.1";
+export const SERVER_VERSION = "0.4.0";
 
 // Bump the version in the URI when the widget changes in a breaking way: hosts
 // cache the template by URI. Earlier URIs stay readable (same page) for hosts
@@ -31,7 +31,7 @@ const WIDGET_URI = "ui://cadsketch/sketcher-v4.html";
 const LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v3.html", "ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
 
 /** File types the editor opens from a workspace (desktop hosts). */
-export const FILE_EXTENSIONS = [".cadsketch", ".dxf"];
+export const FILE_EXTENSIONS = [".cadsketch", ".dxf", ".ir.json"];
 
 const vertex = z
   .array(z.number())
@@ -183,9 +183,9 @@ export function createServer({ widgetHtml, iconSvg, local = false }: ServerOptio
     {
       title: "CADSketch",
       description:
-        "Open a .cadsketch or .dxf file from the workspace in the CADSketch editor. " +
+        "Open a .cadsketch, .dxf or .ir.json file from the workspace in the CADSketch editor. " +
         "A .cadsketch file is JSON: {\"cadsketch\": 1, \"units\": \"mm\", \"parts\": [...]} with parts in the draw_parts format; edits made in the editor are saved back to the file, and the editor reloads when the file changes on disk. " +
-        ".dxf files open read-only.",
+        ".dxf files open read-only. So do .ir.json feature trees (the punkfab/featuretree IR): the body and the features CADSketch can show appear on the canvas, and the ones it can't are named.",
       inputSchema: fileInput.shape,
       annotations: READ_ONLY,
       _meta: ui([{ type: "file", extensions: FILE_EXTENSIONS }]),

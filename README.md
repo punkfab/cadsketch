@@ -52,9 +52,13 @@ the same server also works as a connector in Claude and other MCP hosts.
   or cut into the part.
 - **Assemblies.** Several parts, mate connectors on faces, fasten mates, and
   parameters shared across parts.
-- **Import and export.** DXF, STL and OBJ in; STL and a
-  [featuretree](https://github.com/punkfab/featuretree) IR out, which re-authors
-  the part as an editable FreeCAD tree.
+- **Import and export.** DXF, STL and OBJ in; STL out. A
+  [featuretree](https://github.com/punkfab/featuretree) IR goes both ways: out,
+  it re-authors the part as an editable FreeCAD tree; in, a feature tree (one
+  recovered from a STEP file, say) opens as a body with its holes and face
+  features, and anything CADSketch can't show is named rather than dropped.
+  `tool/ir_roundtrip_volumes.py` checks the round trip against featuretree's
+  own build123d backend.
 
 [GUIDE.md](GUIDE.md) is the user guide.
 
@@ -67,6 +71,7 @@ lib/
   sketch/      the sketch model, recognition, constraints, solids, import
   ui/          the 2D canvas, 3D views, parts tree
   export/      STL, mesh, featuretree IR
+  import/      featuretree IR
   ffi/         kernel bindings: dart:ffi natively, js_interop to WASM on the web
   mcp/         the bridge and editing commands used when embedded in an AI host
 mcp/           the MCP server and the widget an AI host renders

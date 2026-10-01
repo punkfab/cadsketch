@@ -21,12 +21,15 @@ export type FilePart = {
   holes: number[][];
 };
 
-export type OpenedFile = { kind: "parts"; parts: unknown[] } | { kind: "dxf"; text: string };
+export type OpenedFile = { kind: "parts"; parts: unknown[] } | { kind: "dxf"; text: string } | { kind: "ir"; text: string };
 
 export const CADSKETCH_FORMAT = 1;
 
-export function fileKind(name: string): "cadsketch" | "dxf" | null {
+export function fileKind(name: string): "cadsketch" | "dxf" | "ir" | null {
   const lower = name.toLowerCase();
+  // A featuretree feature tree (punkfab/featuretree). Read as it is; the editor
+  // reports which features it can't show.
+  if (lower.endsWith(".ir.json")) return "ir";
   if (lower.endsWith(".cadsketch")) return "cadsketch";
   if (lower.endsWith(".dxf")) return "dxf";
   return null;
@@ -36,6 +39,7 @@ export function fileKind(name: string): "cadsketch" | "dxf" | null {
 export function parseFile(name: string, text: string): OpenedFile {
   const kind = fileKind(name);
   if (kind === "dxf") return { kind: "dxf", text };
+  if (kind === "ir") return { kind: "ir", text };
   if (kind !== "cadsketch") throw new Error(`CADSketch can't open ${name}.`);
   if (text.trim() === "") return { kind: "parts", parts: [] }; // a new, empty file
   let doc: unknown;

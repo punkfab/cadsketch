@@ -7,10 +7,11 @@ import 'package:web/web.dart' as web;
 /// null if the user cancels. [path] is ignored (there's no filesystem path on
 /// the web). Must be called from a user gesture (a button tap) so the browser
 /// allows the picker to open.
-Future<({String name, String text})?> readDxf({String? path}) {
+Future<({String name, String text})?> readDxf(
+    {String? path, List<String> extensions = const ['dxf']}) {
   final input = web.document.createElement('input') as web.HTMLInputElement
     ..type = 'file'
-    ..accept = '.dxf';
+    ..accept = extensions.map((e) => '.$e').join(',');
   final completer = Completer<({String name, String text})?>();
 
   input.onchange = (web.Event _) {

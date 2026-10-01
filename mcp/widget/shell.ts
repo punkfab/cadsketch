@@ -36,15 +36,18 @@ appUrl.searchParams.set("mcp", "1");
 
 type McpUiHostContext = NonNullable<ReturnType<App["getHostContext"]>>;
 type State = { structured: Record<string, unknown>; text: string; loadId?: number };
-type EditorMessage = { type: "load"; parts: unknown[]; loadId: number } | { type: "loadDxf"; name: string; text: string; loadId: number };
+type EditorMessage = { type: "load"; parts: unknown[]; loadId: number } | { type: "loadDxf"; name: string; text: string; loadId: number } | { type: "loadIr"; text: string; loadId: number };
+type ImportedBody = { name: string; imported: string[]; skipped: { feature: string; kind: string; reason: string }[]; notes: string[] };
 type Pending = { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
 
 /** The workspace file this instance was opened on, if any. */
 type OpenFile = {
   name: string;
   uri: string;
-  kind: "cadsketch" | "dxf";
+  kind: "cadsketch" | "dxf" | "ir";
   writable: boolean;
+  /** For a feature tree: what the editor could not show, for the user and the model. */
+  importNote?: string;
   etag?: string;
   /** Text we last read or wrote: an update notification carrying it is our own echo. */
   lastText: string | null;
@@ -65,7 +68,7 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let whenConnected: Promise<void> = Promise.resolve(); // set at the bottom, once connect() is called
 
 // `tools`: this app publishes its own tools to the model while it is mounted.
-const app = new App({ name: "CADSketch", version: "0.3.1" }, { tools: { listChanged: true }, availableDisplayModes: ["inline", "fullscreen"] });
+const app = new App({ name: "CADSketch", version: "0.4.0" }, { tools: { listChanged: true }, availableDisplayModes: ["inline", "fullscreen"] });
 const openai = new OpenAIExtensions(app);
 
 function setStatus(text: string) {
@@ -148,6 +151,7 @@ window.addEventListener("message", (event) => {
     ok?: boolean;
     value?: Record<string, unknown>;
     error?: string;
+    bodies?: unknown[];
   };
   try {
     message = JSON.parse(event.data.slice(TO_HOST.length));
@@ -175,6 +179,15 @@ window.addEventListener("message", (event) => {
     clearTimeout(pending.timer);
     if (message.ok) pending.resolve(message.value ?? {});
     else pending.reject(new Error(message.error ?? "The editor rejected the command."));
+  } else if (message.type === "imported" && Array.isArray(message.bodies)) {
+    // A feature tree came in. Say what didn't, to the user and to the model.
+    const skipped = (message.bodies as ImportedBody[]).flatMap((b) => b.skipped);
+    if (file) {
+      file.importNote = skipped.length
+        ? `Feature tree features CADSketch can't show, left out of the canvas: ${skipped.map((s) => `${s.feature} (${s.kind}): ${s.reason}`).join("; ")}`
+        : "Every feature of the feature tree is on the canvas.";
+    }
+    setStatus(skipped.length ? `read-only · ${skipped.length} feature${skipped.length === 1 ? "" : "s"} not shown: ${skipped.map((s) => s.feature).join(", ")}` : "read-only");
   } else if (message.type === "error" && message.message) {
     setStatus(message.message);
   }
@@ -189,7 +202,7 @@ function reportState(state: State) {
     pendingState = state;
     return;
   }
-  const text = file ? `${state.text}\nOpen file: ${file.name}` : state.text;
+  const text = file ? `${state.text}\nOpen file: ${file.name}${file.importNote ? `\n${file.importNote}` : ""}` : state.text;
   const params = {
     content: [{ type: "text" as const, text, _meta: { "openai/title": file ? file.name : "CADSketch canvas" } }],
     structuredContent: state.structured,
@@ -238,7 +251,9 @@ async function readFile() {
     const opened = parseFile(file.name, text);
     file.pendingLoadId = nextLoadId++;
     file.baseline = null;
-    if (opened.kind === "dxf") sendToEditor({ type: "loadDxf", name: file.name.replace(/\.dxf$/i, ""), text: opened.text, loadId: file.pendingLoadId });
+    file.importNote = undefined;
+    if (opened.kind === "ir") sendToEditor({ type: "loadIr", text: opened.text, loadId: file.pendingLoadId });
+    else if (opened.kind === "dxf") sendToEditor({ type: "loadDxf", name: file.name.replace(/\.dxf$/i, ""), text: opened.text, loadId: file.pendingLoadId });
     else sendToEditor({ type: "load", parts: opened.parts, loadId: file.pendingLoadId });
     setStatus(file.writable ? "" : "read-only");
   } catch (e) {

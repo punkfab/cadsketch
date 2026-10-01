@@ -1,6 +1,6 @@
 ---
 name: cadsketch
-description: Design flat, extruded mechanical parts (plates, brackets, gaskets, spacers, panels) with the user in the CADSketch editor. Draw parts, edit the open sketch in place (move vertices, add and move holes, set driving dimensions, add constraints, undo), look at it with a screenshot, export STL, write and edit .cadsketch files, open .dxf files, and review what the user has sketched. Use for any request to design, draw, sketch, model, dimension, change or review a part that is a 2D outline with holes, extruded to a thickness.
+description: Design flat, extruded mechanical parts (plates, brackets, gaskets, spacers, panels) with the user in the CADSketch editor. Draw parts, edit the open sketch in place (move vertices, add and move holes, set driving dimensions, add constraints, undo), look at it with a screenshot, export STL, write and edit .cadsketch files, open .dxf and featuretree .ir.json files, and review what the user has sketched. Use for any request to design, draw, sketch, model, dimension, change or review a part that is a 2D outline with holes, extruded to a thickness.
 ---
 
 # CADSketch
@@ -117,6 +117,13 @@ The user opens it in the CADSketch file viewer. While it is open:
 - A sketch that is not a closed shape yet is not written to the file.
 
 `.dxf` files also open in the viewer, read-only.
+
+`.ir.json` files (a featuretree feature tree: `{"name", "features": [...]}`,
+punkfab/featuretree) open read-only too. The first pad becomes the body, through
+cuts become holes, and pads and blind pockets on the top or bottom face become
+features on the body. Fillets, revolves, draft and sideways cuts are not shown;
+the canvas context lists them by name, so tell the user what is missing rather
+than describing the canvas as the whole part.
 
 ## Reading what the user drew
 

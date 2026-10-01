@@ -11,6 +11,8 @@ const reported = (extra = {}) => ({ ...bracket, closed: true, segments: 4, const
 test("file kinds", () => {
   assert.equal(fileKind("a/b/Bracket.CADSKETCH"), "cadsketch");
   assert.equal(fileKind("plate.dxf"), "dxf");
+  assert.equal(fileKind("plate.ir.json"), "ir");
+  assert.equal(fileKind("package.json"), null);
   assert.equal(fileKind("part.step"), null);
 });
 
@@ -33,6 +35,7 @@ test("an empty file is an empty canvas; a bare array is accepted; junk is refuse
   assert.throws(() => parseFile("a.cadsketch", "{nope"), /not valid JSON/);
   assert.throws(() => parseFile("a.cadsketch", '{"name":"x"}'), /no "parts" array/);
   assert.deepEqual(parseFile("p.dxf", "0\nEOF\n"), { kind: "dxf", text: "0\nEOF\n" });
+  assert.deepEqual(parseFile("p.ir.json", "{}"), { kind: "ir", text: "{}" });
 });
 
 test("the canvas becomes file parts, without the editor-only fields", () => {

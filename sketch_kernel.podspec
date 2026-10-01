@@ -21,7 +21,7 @@ Pod::Spec.new do |s|
   s.description      = 'Flat C ABI geometry kernel shared by the Flutter harness and the native iOS build.'
   s.homepage         = 'https://github.com/punkfab/cadsketch'
   s.license          = { :type => 'MIT' }
-  s.author           = { 'Dan Newcome' => 'djn125@yahoo.com' }
+  s.author           = { 'Dan Newcome' => 'support@cadsketch.ai' }
   s.source           = { :path => '.' }
 
   # Paths are relative to this podspec (repo root) — native/ is inside it.

@@ -1,74 +1,102 @@
-# ai-sketcher
+# CADSketch
 
-A CAD sketch assistant. **This Flutter app is a disposable local prototyping
-harness** — run it on Linux desktop with a connected tablet (Huion) to iterate
-fast on the sketch → beautify → constrain → dimension → AI loop. The eventual
-product is a native iOS-only app; the one piece that survives that rebuild is
-the C++ geometry kernel behind the flat C ABI in `native/sketch_kernel.h`.
+Sketch-first CAD. Draw a rough shape and it snaps to clean, constrained,
+dimensioned geometry, then extrudes to a 3D part you can add to, cut into,
+assemble, and export.
 
-For how to draw, dimension, hole, and assemble sketches, see **[GUIDE.md](GUIDE.md)**.
+![The CADSketch editor: an L-bracket as a dimensioned 2D sketch and an extruded 3D view](docs/editor.png)
 
-## Architecture
+| Where | How |
+| --- | --- |
+| iPhone and iPad | [App Store](https://apps.apple.com/us/app/cadsketch/id6783180350) |
+| Any browser | [cadsketch.ai/app](https://cadsketch.ai/app/) |
+| Codex and ChatGPT desktop | the plugin, below |
+
+It is one codebase: a Flutter app with a C++ geometry kernel (native via FFI,
+WebAssembly on the web). The plugin embeds the same web build.
+
+## Use it inside Codex or ChatGPT
+
+The plugin puts the editor in the app's sidebar, opens `.cadsketch` and `.dxf`
+files from your workspace in it, and lets the agent work in the same sketch you
+are looking at: read the canvas, move vertices, add holes, set driving
+dimensions and constraints, undo, take a screenshot, and export STL.
+
+Needs Node.js 22 or later and Codex 0.142 or later.
+
+```sh
+codex plugin marketplace add punkfab/cadsketch
+codex plugin add cadsketch@cadsketch
+```
+
+Restart the desktop app, then click **CADSketch** in the sidebar, or ask:
+
+> Create bracket.cadsketch for a 60 × 30 mm L-bracket, 5 mm thick, with three
+> M4 holes, and open it.
+
+Then, with it open: *"make it 95 mm wide and add a hole 8 mm in from each
+corner."*
+
+How it works, the tools, and the file format are in [mcp/README.md](mcp/README.md).
+It is built on the open MCP Apps standard plus OpenAI's plugin extensions, so
+the same server also works as a connector in Claude and other MCP hosts.
+
+## What it does
+
+- **Freehand to geometry.** Strokes are recognised as lines, arcs and circles,
+  endpoints weld, and horizontal, vertical, parallel and perpendicular
+  constraints are inferred.
+- **Live constraint solving.** Tap a length and type a value; the sketch
+  re-solves. Drag a point and the rest follows its constraints.
+- **3D.** A closed profile extrudes to a solid. Sketch on a face to add material
+  or cut into the part.
+- **Assemblies.** Several parts, mate connectors on faces, fasten mates, and
+  parameters shared across parts.
+- **Import and export.** DXF, STL and OBJ in; STL and a
+  [featuretree](https://github.com/punkfab/featuretree) IR out, which re-authors
+  the part as an editable FreeCAD tree.
+
+[GUIDE.md](GUIDE.md) is the user guide.
+
+## Repository layout
 
 ```
-native/                 Durable C++ kernel (survives to the iOS rebuild)
-  sketch_kernel.h        The flat C ABI — Dart (now) and Swift (later) consume this
-  sketch_kernel.cpp      Stable math: total-least-squares line fit (M2: planegcs solver)
+native/        C++ geometry kernel behind a flat C ABI (line/circle fitting, the
+               Levenberg-Marquardt constraint solver)
 lib/
-  ffi/sketch_kernel_ffi.dart   Hand-written dart:ffi bindings to the kernel
-  sketch/entities.dart         Sketch model (RawStroke, LineEntity) — JSON-able for AI (M5)
-  sketch/beautify.dart         Tune-by-feel classification thresholds (hot-reloadable)
-  ui/sketch_canvas.dart        Pointer/stylus capture + CustomPainter rendering
-  main.dart                    App shell; probes the FFI bridge on launch
+  sketch/      the sketch model, recognition, constraints, solids, import
+  ui/          the 2D canvas, 3D views, parts tree
+  export/      STL, mesh, featuretree IR
+  ffi/         kernel bindings: dart:ffi natively, js_interop to WASM on the web
+  mcp/         the bridge and editing commands used when embedded in an AI host
+mcp/           the MCP server and the widget an AI host renders
+plugin/        the Codex / ChatGPT plugin (built output committed) and the
+               directory submission
+landing/       cadsketch.ai
+ios/ web/      platform shells
+test/          the Dart test suite
 ```
 
-Design rule: **stable heavy math → C++ kernel; tune-by-feel logic → Dart** (so
-hot reload makes tuning instant). The kernel is dlopen'd via FFI and bundled
-into the app by `linux/CMakeLists.txt`, so no extra build step is needed.
+Design rule: stable heavy math goes in the C++ kernel; tune-by-feel logic stays
+in Dart, where hot reload makes tuning instant.
 
-## Run it (Linux + tablet)
+## Develop
 
-```bash
-flutter run -d linux
+```sh
+./build_native.sh          # the kernel, for desktop runs and tests
+flutter test               # the Dart suite
+flutter run -d linux       # desktop harness
+./build_wasm.sh && flutter build web --release --base-href /app/   # the web build
+
+cd mcp && npm install && npm test    # the MCP server and plugin
 ```
 
-Draw with the tablet/mouse. A roughly-straight stroke snaps to a clean cyan line
-(beautified via the kernel); anything else stays a grey freehand stroke. The app
-bar shows `kernel vN` in green when the FFI bridge loaded. "Clear" empties the
-canvas.
+Deployment (TestFlight, the website, the MCP server) is described in
+[DEPLOY.md](DEPLOY.md) and [mcp/README.md](mcp/README.md).
 
-> Huion on Linux: x/y stroke capture works; pen **pressure** is unreliable
-> through Flutter's GTK embedder — don't build pressure-dependent features here.
+## License
 
-## Iterate on the native kernel only
+No license is granted. The source is published so you can read it and install
+the plugin; all rights are reserved.
 
-```bash
-./build_native.sh        # builds build/native/libsketch_kernel.so
-flutter test             # pure-Dart classification tests
-```
-
-## Milestones
-
-- **M0** ✅ canvas + stroke capture + render
-- **M1** ✅ beautify straight strokes → clean lines (FFI round-trip proven)
-- **M2** ✅ arc/circle recognition; constraint solver (self-written LM) behind
-  the C ABI; inference (merge endpoints, H/V, perpendicular/parallel) + solve;
-  CAD-style constraint glyphs
-- **M3** ✅ driving vs driven dimensions; tap a length, type a value, geometry
-  re-solves live
-- **M3.5** ✅ extrude a closed profile to a prism + rotatable orthographic
-  wireframe view (pseudo-3D in CustomPaint; real shaded 3D deferred to native)
-- **M4** ✅ multiple parts (parts bar) + face-tap mate connectors; circles
-  extrude to cylinders; **fasten mates** assemble parts in a shared 3D scene
-  (closed-form connector alignment); **shared parameters** across parts — bind a
-  dimension to a named parameter, edit it once, every bound part re-solves
-- **Import** ✅ STL/OBJ meshes import as parts (pure-Dart) — render, take mate
-  connectors, assemble. True STEP needs OCCT (native build); convert STEP→STL
-  meanwhile. Arcs solve in closed line+arc contours with auto-tangency.
-- **M5** AI assistant: structured sketch JSON → Claude → tool-call suggestions
-
-> Solver note: the kernel currently uses a self-written Levenberg-Marquardt
-> solver, not planegcs — same C ABI, so planegcs can drop in later (see
-> `native/sketch_kernel.cpp`). Equal-length is supported by the solver but not
-> auto-inferred yet, so dimensioning one side of a closed rectangle resolves as
-> a least-squares compromise rather than a parametric width.
+CADSketch is a [punkfab](https://punkfab.com) project.

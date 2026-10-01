@@ -1,36 +1,78 @@
-# CADSketch as an AI-host app (ChatGPT, Claude, any MCP Apps host)
+# CADSketch inside AI hosts (Codex, ChatGPT, Claude, any MCP Apps host)
 
-This folder makes CADSketch usable *inside* a chat: the model can draw a part
-and have it open in the real editor, and whatever the user sketches or edits is
-visible to the model, which can review it or redraw an improved version.
+This folder makes CADSketch usable *inside* an AI app: the model can draw a part
+and have it open in the real editor, files in a workspace open in it, and
+whatever the user sketches or edits is visible to the model.
 
 It is the same app. Nothing here forks the editor:
 
 ```
- chat host (ChatGPT / Claude / ...)
-   │  MCP over HTTP                       tools: draw_parts, open_sketcher
+ host (Codex / ChatGPT desktop, or a chat host over HTTP)
+   │  MCP                      tools: draw_parts, open_sketcher, open_file
    ▼
- mcp/  ── this server, stateless ─────────  serves one widget page
-   │
-   ▼  widget page = mcp/widget/shell.{html,ts}   (speaks MCP Apps via the official SDK)
-   │      └── <iframe>  https://cadsketch.ai/app/?mcp=1    ← the normal Flutter web build
-   │                         │
-   │   three private string messages (lib/mcp/host_bridge_web.dart)
-   │      shell → app   load   parts the model drew
-   │      app → shell   ready  the editor is up
-   │      app → shell   state  what is on the canvas now
+ mcp/src  ── one stateless server, two entry points ──────────────────────
+   │   stdio.ts   launched locally by the plugin   (plugin/cadsketch)
+   │   main.ts    Streamable HTTP for remote hosts (the droplet)
    ▼
- the model sees the canvas (ui/update-model-context) and can call draw_parts again
+ widget = mcp/widget/shell.{html,ts}     speaks MCP Apps + OpenAI extensions
+   │      └── <iframe>  https://cadsketch.ai/app/?mcp=1   ← the normal Flutter web build
+   │   private string messages (lib/mcp/host_bridge_web.dart)
+   │      shell → app   load / loadDxf   content to show
+   │      app → shell   ready            the editor is up
+   │      app → shell   state            what is on the canvas now
+   ▼
+ the model sees the canvas (ui/update-model-context); an opened .cadsketch file
+ is kept in sync both ways
 ```
 
 - **`lib/mcp/`** (in the Flutter app) — the part format and the bridge. The
   bridge starts only when the page is opened with `?mcp=1`; on iOS, desktop and
   the plain web app `HostBridge.attach` returns null and nothing runs.
-- **`mcp/src/`** — the MCP server: two tools and the widget resource.
-- **`mcp/widget/`** — the shell page the host renders. No CAD logic.
+- **`mcp/src/`** — the MCP server.
+- **`mcp/widget/`** — the shell page the host renders, and the file-sync rules.
+  No CAD logic.
+- **`plugin/cadsketch/`** — the installable Codex / ChatGPT plugin (built output
+  is committed, so it installs from a clone with no build step).
 
 No AI key ships anywhere and the server calls no model: the host's own model
-does the thinking, paid for by the user's subscription to that host.
+does the thinking.
+
+## Where it shows up
+
+OpenAI's plugin extensions let an MCP App register into the app itself, by
+adding `_meta["openai/ui"].entrypoints` to a tool:
+
+| Entrypoint | Tool | Result |
+| --- | --- | --- |
+| `global` | `open_sketcher` | **CADSketch** in the sidebar, opening as a full tab |
+| `thread` | `open_sketcher` | a panel beside the current conversation |
+| `file` (`.cadsketch`, `.dxf`) | `open_file` | those files open in the editor |
+| (model tool) | `draw_parts` | the agent draws parts inline |
+
+File viewers are desktop-only; sidebar and thread entrypoints also work on the
+web. Hosts without the extensions (Claude, plain MCP Apps hosts) ignore the
+metadata and still get `draw_parts` and `open_sketcher` as ordinary tools.
+
+### `.cadsketch` files
+
+```json
+{ "cadsketch": 1, "units": "mm",
+  "parts": [ { "name": "bracket", "depth": 5,
+               "profile": [[0,0],[40,0],[40,20],[0,20]],
+               "holes": [[8,10,2.25]] } ] }
+```
+
+`parts` is exactly the `draw_parts` format, so an agent can write the file with
+its ordinary file tools. While a file is open in the editor:
+
+- the host's file is read through `resources/read`, never a raw path;
+- a hand edit is written back with `openai/resources/write`, using the etag it
+  read, so a concurrent change is a conflict (reload) rather than an overwrite;
+- opening a file never rewrites it, and the editor's own save coming back as a
+  change notification is recognised and ignored;
+- work the format can't hold (an open sketch, a face feature, a mesh) blocks
+  saving and says so, instead of being dropped;
+- `.dxf` opens read-only.
 
 ## The part format
 
@@ -52,28 +94,45 @@ featuretree IR's, and reading parts back out reuses `partToIr`.
 a hole outside the outline or a self-crossing profile) so the model can catch
 its own mistakes.
 
-## Run it locally
+## Build and test
 
 ```sh
 cd mcp
 npm install
-npm test                 # builds, then 8 end-to-end tests over real HTTP
-npm run dev              # http://localhost:3001/mcp, editor = https://cadsketch.ai/app/
+npm test        # builds, then 15 tests: both transports, the file format, the bundled plugin
+npm run dev     # http://localhost:3001/mcp, editor = https://cadsketch.ai/app/
 ```
 
-To test against a local Flutter build instead of production:
+`npm run build` also writes `../plugin/cadsketch/dist/`. Commit it: a plugin
+installed from Git is not built on the user's machine.
+
+The desktop app's UI can't be run in CI, so `e2e/fake-host.mjs` stands in for
+it: a page that speaks the host side of MCP Apps plus OpenAI's file-resource
+extension, driven by Playwright against a real Flutter build.
 
 ```sh
-flutter build web --release --base-href /app/
-# serve build/web at http://localhost:18090/app/ , then
-CADSKETCH_APP_URL=http://localhost:18090/app/ npm run dev
+flutter build web --release --base-href /app/          # from the repo root
+mkdir -p /tmp/site && ln -sfn "$PWD/build/web" /tmp/site/app
+python3 mcp/e2e/cors-server.py /tmp/site &
+cd mcp && node e2e/fake-host.mjs ../plugin/cadsketch/dist/widget.html http://localhost:18091/app/
+# add "allow-scripts" as a last argument to test a sandbox with no origin
 ```
 
-The reference host from `modelcontextprotocol/ext-apps` (`examples/basic-host`)
-renders the widget and shows the model context the editor reports, which is how
-this was verified end to end.
+It checks: a file opens and is reported to the model, opening does not rewrite
+it, a dragged vertex is saved with the right etag, the save's echo does not
+loop, an external change reloads the editor, `.dxf` is never written, and the
+sidebar canvas fills its container.
 
-## Connect it to ChatGPT (developer mode)
+## Install in Codex / ChatGPT desktop
+
+See `plugin/cadsketch/README.md`. In short:
+
+```sh
+codex plugin marketplace add /path/to/this/repo
+codex plugin add cadsketch@cadsketch
+```
+
+## Connect a remote host (ChatGPT connector, Claude)
 
 ChatGPT needs a public HTTPS URL for `/mcp`.
 
@@ -101,20 +160,36 @@ connection, start a new chat.
 
 ## What is and isn't known to work
 
-- Verified in the reference MCP Apps host: tools, widget render, the editor
-  loading a model-drawn part, and hand edits flowing back as model context.
-- **Not yet verified in ChatGPT itself.** The widget frames `cadsketch.ai`, which
-  is declared in `frameDomains`. If a host refuses nested frames the widget says
-  so and offers the editor in a browser tab instead of hanging. The fallback
-  design is to load the Flutter build directly into the widget document
-  (`window.CADSKETCH_MCP`, already supported by the bridge), which needs the
-  host to allow WebAssembly and `cadsketch.ai` to send CORS headers.
+Verified:
+
+- The Codex CLI installs the plugin and a real Codex agent run called
+  `draw_parts` through it and reported the right volume.
+- In the reference MCP Apps host: tools, widget render, the editor loading a
+  model-drawn part, hand edits flowing back as model context.
+- In the stand-in host: the whole file viewer flow above, in sandboxes with and
+  without an origin.
+- In Claude: the tool call and widget render.
+
+**Not yet verified: the editor inside the Codex / ChatGPT desktop app itself.**
+The widget frames `cadsketch.ai`, declared in `frameDomains`. If a host refuses
+the frame, the panel says so with a reason code and offers the editor in a
+browser tab:
+
+| Code | Meaning | Fix |
+| --- | --- | --- |
+| `frame-blocked` | the host refuses nested frames | load the Flutter build directly in the widget (`window.CADSKETCH_MCP`, already supported by the bridge) |
+| `editor-stalled` | the page loaded but its files were refused | CORS on the app; `.do/app.yaml` has the rule and it is live |
+| `no-load` | the page never arrived | the host's network policy |
+
+Other limits:
+
 - Arcs drawn by a model are tessellated into short edges on load (the same
   thing the DXF importer does), so they come back as many vertices.
 - Face features and imported meshes are reported to the model but cannot be
-  drawn by it yet; `draw_parts` creates base bodies only.
-- A host that re-renders the widget (page reload) replays the model's last
-  drawing, so hand edits made after it are not restored.
+  drawn by it or saved to a `.cadsketch` file.
+- A chat host that re-renders an inline widget replays the model's last
+  drawing, so hand edits made after it are not restored. Files don't have this
+  problem: the file is the state.
 
 ## Publishing to the ChatGPT directory
 

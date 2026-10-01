@@ -4,6 +4,7 @@ import 'dart:js_interop';
 
 import 'package:web/web.dart' as web;
 
+import '../sketch/dxf.dart';
 import '../ui/sketch_canvas.dart';
 import 'host_document.dart';
 import 'part_spec.dart';
@@ -22,7 +23,8 @@ import 'part_spec.dart';
 //
 //   app  -> shell   "cadsketch>host:" + {"type":"ready"}
 //   app  -> shell   "cadsketch>host:" + {"type":"state","structured":{},"text":""}
-//   shell -> app    "cadsketch>app:"  + {"type":"load","parts":[...]}
+//   shell -> app    "cadsketch>app:"  + {"type":"load","parts":[...],"loadId":1}
+//   shell -> app    "cadsketch>app:"  + {"type":"loadDxf","name":"","text":""}
 
 @JS('CADSKETCH_MCP')
 external JSAny? get _directFlag;
@@ -53,6 +55,10 @@ class HostBridge {
   Timer? _debounce;
   String? _lastSent;
 
+  // Id of the last host load we applied, echoed in every later state message so
+  // the shell can tell "this is what I loaded" from "the user changed it".
+  Object? _loadId;
+
   void dispose() {
     _debounce?.cancel();
     _controller.removeListener(_onDocumentChanged);
@@ -80,6 +86,7 @@ class HostBridge {
       'type': 'state',
       'structured': ctx.structured,
       'text': ctx.text,
+      'loadId': ?_loadId,
     };
     final encoded = jsonEncode(payload);
     if (encoded == _lastSent) return; // selection changes etc. — nothing new
@@ -98,6 +105,18 @@ class HostBridge {
       switch (msg['type']) {
         case 'load':
           loadPartSpecs(_controller, partSpecsFromJson(msg['parts']));
+          _loadId = msg['loadId'];
+          _lastSent = null; // always echo a load, even if it changed nothing
+          _onDocumentChanged();
+        case 'loadDxf':
+          final text = msg['text'];
+          if (text is! String || text.length > 20 * 1024 * 1024) {
+            throw const PartSpecException('DXF text missing or too large');
+          }
+          loadDxfText(_controller, (msg['name'] ?? 'drawing').toString(), text);
+          _loadId = msg['loadId'];
+          _lastSent = null;
+          _onDocumentChanged();
         case 'ping':
           _post({'type': 'ready'});
           _lastSent = null;
@@ -105,6 +124,8 @@ class HostBridge {
       }
     } on PartSpecException catch (e) {
       _post({'type': 'error', 'message': e.message});
+    } on DxfException catch (e) {
+      _post({'type': 'error', 'message': 'DXF: ${e.message}'});
     } catch (e) {
       _post({'type': 'error', 'message': 'could not apply host message'});
     }

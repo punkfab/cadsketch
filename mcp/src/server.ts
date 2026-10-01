@@ -1,32 +1,35 @@
-import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import { McpServer, type CallToolResult, type ReadResourceResult } from "@modelcontextprotocol/server";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { describe, report, structuralError, type PartInput } from "./geometry.js";
 
-// CADSketch as an MCP App.
+// CADSketch as an MCP App, with OpenAI's plugin-extension entrypoints.
 //
-// Two tools, one widget. The widget is the real CADSketch web app (the same
-// Flutter build served at cadsketch.ai/app), embedded by a small shell page.
+// One widget (the real CADSketch web app, framed by a small shell page) and
+// three tools that open it:
 //   draw_parts     the model draws parts; they open in the editor, editable
-//   open_sketcher  an empty canvas for the user to draw by hand
+//   open_sketcher  an empty canvas; also the SIDEBAR app and the THREAD panel
+//   open_file      the FILE viewer/editor for .cadsketch and .dxf files
 // Whatever is on the canvas is reported back to the model as context by the
 // widget (ui/update-model-context), so it can review or revise the design.
 //
-// The server is stateless: the document lives in the widget.
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
+// The same registration serves the remote HTTP server (src/main.ts) and the
+// local stdio server a Codex/ChatGPT plugin launches (src/stdio.ts). The
+// server is stateless: the document lives in the widget, or in the file.
 
 /** Where the CADSketch web build is served. Must be the build with the host bridge. */
 export const APP_URL = process.env.CADSKETCH_APP_URL ?? "https://cadsketch.ai/app/";
 
+export const SERVER_VERSION = "0.2.0";
+
 // Bump the version in the URI when the widget changes in a breaking way: hosts
-// cache the template by URI.
-const WIDGET_URI = "ui://cadsketch/sketcher-v2.html";
-// Earlier URIs stay readable (same page) for hosts holding a cached tool list.
-const LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v1.html"];
+// cache the template by URI. Earlier URIs stay readable (same page) for hosts
+// holding a cached tool list.
+const WIDGET_URI = "ui://cadsketch/sketcher-v3.html";
+const LEGACY_WIDGET_URIS = ["ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"];
+
+/** File types the editor opens from a workspace (desktop hosts). */
+export const FILE_EXTENSIONS = [".cadsketch", ".dxf"];
 
 const vertex = z
   .array(z.number())
@@ -62,19 +65,49 @@ const reportShape = z.object({
   warnings: z.array(z.string()),
 });
 
-const toolMeta = {
-  ui: { resourceUri: WIDGET_URI },
-  // ChatGPT's alias for the same link.
-  "openai/outputTemplate": WIDGET_URI,
-};
+/** What a host passes when the user opens a file with the file entrypoint. */
+const fileInput = z.object({
+  file: z.object({
+    name: z.string().min(1).describe("File name with extension, no path"),
+    resourceUri: z.string().min(1).describe("Opaque host URI for reading and writing the file"),
+  }),
+});
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 
-export function createServer(): McpServer {
-  const server = new McpServer({ name: "CADSketch", version: "0.1.0" });
+export interface ServerOptions {
+  /** The built widget page (dist/widget.html), with %%APP_URL%% placeholders. */
+  widgetHtml: string;
+  /** Monochrome SVG (currentColor) shown in the sidebar and tabs. */
+  iconSvg: string;
+}
 
-  registerAppTool(
-    server,
+export function createServer({ widgetHtml, iconSvg }: ServerOptions): McpServer {
+  const icon = {
+    src: "data:image/svg+xml," + encodeURIComponent(iconSvg),
+    mimeType: "image/svg+xml",
+    sizes: ["any"],
+  };
+
+  // The server icon is what OpenAI hosts show for the sidebar entry and tabs
+  // (the SDK has no per-tool icon field; the server icon is the documented
+  // fallback).
+  const server = new McpServer({
+    name: "cadsketch",
+    title: "CADSketch",
+    version: SERVER_VERSION,
+    icons: [icon],
+  });
+
+  // Links a tool to the widget, and (for OpenAI hosts) registers it into the
+  // sidebar / thread panel / file viewer.
+  const ui = (entrypoints: unknown[] = []) => ({
+    ui: { resourceUri: WIDGET_URI },
+    "openai/outputTemplate": WIDGET_URI, // ChatGPT's alias for the same link
+    ...(entrypoints.length ? { "openai/ui": { entrypoints }, "openai/iconStyle": "monochrome" } : {}),
+  });
+
+  server.registerTool(
     "draw_parts",
     {
       title: "Draw parts in CADSketch",
@@ -85,10 +118,10 @@ export function createServer(): McpServer {
         "To change a design, call this again with the full, updated parts list; the canvas is replaced. " +
         "The user's own edits and freehand sketches are sent back to you as context, in this same format. " +
         "The result reports each part's size, volume and any geometry problems; fix problems before describing the part as done.",
-      inputSchema: z.object({ parts: partsArg }),
-      outputSchema: z.object({ parts: z.array(part), report: z.array(reportShape) }),
+      inputSchema: { parts: partsArg },
+      outputSchema: { parts: z.array(part), report: z.array(reportShape) },
       annotations: READ_ONLY,
-      _meta: toolMeta,
+      _meta: ui(),
     },
     async ({ parts }): Promise<CallToolResult> => {
       const inputs = parts as PartInput[];
@@ -118,19 +151,19 @@ export function createServer(): McpServer {
     },
   );
 
-  registerAppTool(
-    server,
+  server.registerTool(
     "open_sketcher",
     {
-      title: "Open CADSketch",
+      // The title is what the sidebar entry and the thread tab are called.
+      title: "CADSketch",
       description:
         "Open an empty CADSketch canvas so the user can sketch a part by hand: freehand strokes snap to clean, constrained, dimensioned geometry that can be extruded. " +
         "Use when the user wants to draw something themselves, or asks to open CADSketch. " +
         "What they draw is sent back to you as context (parts with profile, holes and depth in mm), so you can review it or redraw an improved version with draw_parts.",
-      inputSchema: z.object({}),
-      outputSchema: z.object({ parts: z.array(part) }),
+      inputSchema: {},
+      outputSchema: { parts: z.array(part) },
       annotations: READ_ONLY,
-      _meta: toolMeta,
+      _meta: ui([{ type: "global" }, { type: "thread" }]),
     },
     async (): Promise<CallToolResult> => ({
       content: [{ type: "text", text: "Opened an empty CADSketch canvas. The user's sketch will arrive as context once they draw." }],
@@ -138,36 +171,54 @@ export function createServer(): McpServer {
     }),
   );
 
+  server.registerTool(
+    "open_file",
+    {
+      title: "CADSketch",
+      description:
+        "Open a .cadsketch or .dxf file from the workspace in the CADSketch editor. " +
+        "A .cadsketch file is JSON: {\"cadsketch\": 1, \"units\": \"mm\", \"parts\": [...]} with parts in the draw_parts format; edits made in the editor are saved back to the file, and the editor reloads when the file changes on disk. " +
+        ".dxf files open read-only.",
+      inputSchema: fileInput.shape,
+      annotations: READ_ONLY,
+      _meta: ui([{ type: "file", extensions: FILE_EXTENSIONS }]),
+    },
+    async ({ file }): Promise<CallToolResult> => ({
+      content: [{ type: "text", text: `Opened ${file.name} in CADSketch.` }],
+      structuredContent: { file },
+    }),
+  );
+
+  const appOrigin = new URL(APP_URL).origin;
+  const html = widgetHtml.replaceAll("%%APP_URL%%", APP_URL);
   for (const uri of [WIDGET_URI, ...LEGACY_WIDGET_URIS]) {
-    registerAppResource(
-      server,
-      uri === WIDGET_URI ? "CADSketch editor" : `CADSketch editor (${uri})`,
+    server.registerResource(
+      uri === WIDGET_URI ? "cadsketch-editor" : `cadsketch-editor-${uri.split("/").pop()}`,
       uri,
-      { mimeType: RESOURCE_MIME_TYPE, description: "The CADSketch sketch editor" },
-      async (): Promise<ReadResourceResult> => {
-        const template = await fs.readFile(path.join(HERE, "widget.html"), "utf-8");
-        const html = template.replaceAll("%%APP_URL%%", APP_URL);
-        const appOrigin = new URL(APP_URL).origin;
-        return {
-          contents: [
-            {
-              uri,
-              mimeType: RESOURCE_MIME_TYPE,
-              text: html,
-              _meta: {
-                ui: {
-                  // The editor is the CADSketch web app itself, in a nested frame
-                  // on its own origin. Nothing else is loaded or contacted.
-                  csp: { frameDomains: [appOrigin], resourceDomains: [], connectDomains: [] },
-                  prefersBorder: true,
-                },
-                "openai/widgetDescription":
-                  "The CADSketch editor showing the current parts. The user can edit them by hand; edits are reported back as context.",
+      { title: "CADSketch", description: "The CADSketch sketch editor", mimeType: "text/html;profile=mcp-app" },
+      async (): Promise<ReadResourceResult> => ({
+        contents: [
+          {
+            uri,
+            mimeType: "text/html;profile=mcp-app",
+            text: html,
+            _meta: {
+              "openai/ui": {
+                preferredDisplayMode: "inline",
+                availableDisplayModes: ["inline", "fullscreen"],
               },
+              ui: {
+                // The editor is the CADSketch web app itself, in a nested frame
+                // on its own origin. Nothing else is loaded or contacted.
+                csp: { frameDomains: [appOrigin], resourceDomains: [], connectDomains: [] },
+                prefersBorder: true,
+              },
+              "openai/widgetDescription":
+                "The CADSketch editor showing the current parts. The user can edit them by hand; edits are reported back as context.",
             },
-          ],
-        };
-      },
+          },
+        ],
+      }),
     );
   }
 

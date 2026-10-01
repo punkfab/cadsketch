@@ -158,6 +158,25 @@ void main() {
     expect(ctx.text, contains('OPEN sketch'));
   });
 
+  test('a DXF file opened by the host loads like an imported DXF', () {
+    const dxf = '0\nSECTION\n2\nENTITIES\n'
+        '0\nLWPOLYLINE\n90\n4\n70\n1\n'
+        '10\n0\n20\n0\n10\n50\n20\n0\n10\n50\n20\n25\n10\n0\n20\n25\n'
+        '0\nCIRCLE\n10\n25\n20\n12.5\n40\n4\n'
+        '0\nENDSEC\n0\nEOF\n';
+    final c = SketchController();
+    final before = c.fitViewRequests;
+    loadDxfText(c, 'plate', dxf);
+    expect(c.parts, hasLength(1));
+    expect(c.active.name, 'plate');
+    expect(c.fitViewRequests, before + 1);
+    final part = (modelContextOf(c).structured['parts'] as List).single as Map;
+    expect(part['closed'], true);
+    expect(part['holes'], hasLength(1));
+    expect(() => loadDxfText(c, 'empty', '0\nEOF\n'),
+        throwsA(isA<PartSpecException>()));
+  });
+
   test('malformed host input is rejected with a clear message', () {
     expect(() => partSpecsFromJson('nope'), throwsA(isA<PartSpecException>()));
     expect(() => PartSpec.fromJson({'name': 'x', 'depth': 5}),

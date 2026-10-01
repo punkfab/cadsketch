@@ -1,12 +1,17 @@
-import { createMcpExpressApp } from "@modelcontextprotocol/express";
-import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+// Remote entry point: the same server over Streamable HTTP, for hosts that
+// connect to a URL (ChatGPT custom connectors, Claude connectors).
+import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import cors from "cors";
 import type { Request, Response } from "express";
 import type { Server } from "node:http";
+import { loadAssets } from "./assets.js";
 import { APP_URL, createServer } from "./server.js";
 
 /** Starts the HTTP server. Stateless: a fresh MCP server per request. */
-export function start(port: number): Promise<Server> {
+export async function start(port: number): Promise<Server> {
+  const assets = await loadAssets();
+
   // HOST: the interface to bind. Behind a reverse proxy use 127.0.0.1 and list
   // the public hostnames in MCP_ALLOWED_HOSTS (comma separated), which the SDK
   // checks against the Host header (DNS-rebinding protection).
@@ -16,8 +21,8 @@ export function start(port: number): Promise<Server> {
   app.use(cors());
 
   app.all("/mcp", async (req: Request, res: Response) => {
-    const server = createServer();
-    const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    const server = createServer(assets);
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {
       transport.close().catch(() => {});
       server.close().catch(() => {});

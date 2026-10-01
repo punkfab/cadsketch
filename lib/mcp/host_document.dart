@@ -1,3 +1,4 @@
+import '../sketch/dxf.dart';
 import '../ui/sketch_canvas.dart';
 import 'part_spec.dart';
 
@@ -20,6 +21,21 @@ void loadPartSpecs(SketchController controller, List<PartSpec> specs) {
     // frame it, or it lands in a corner of the canvas at 1 px per mm.
     controller.requestFitView();
   }
+}
+
+/// Replaces the document with the contents of a DXF file the host opened (the
+/// same parser and import path as the app's own "Import DXF").
+void loadDxfText(SketchController controller, String name, String text) {
+  final drawing = parseDxf(text);
+  if (drawing.isEmpty) {
+    throw const PartSpecException(
+        'No supported DXF entities (LINE / LWPOLYLINE / POLYLINE / CIRCLE / ARC)');
+  }
+  controller.newProject();
+  controller.importDxf(name, drawing);
+  controller.removePart(0); // drop the placeholder
+  controller.setActive(0);
+  controller.requestFitView();
 }
 
 /// The document as model-visible context.

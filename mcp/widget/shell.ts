@@ -1,15 +1,20 @@
-// The widget shell: the page an AI host (ChatGPT, Claude, ...) renders for a
-// CADSketch tool call. It does two jobs and nothing else:
+// The widget shell: the page an AI host (ChatGPT, Codex, Claude, ...) renders
+// for a CADSketch tool call, sidebar app, thread panel or opened file. It does
+// three jobs and nothing else:
 //
-//  1. Speaks the MCP Apps protocol to the host, through the official SDK.
-//  2. Hosts the real CADSketch web app in a nested frame and relays three
+//  1. Speaks the MCP Apps protocol to the host, through the official SDKs
+//     (plus OpenAI's extensions where the host has them).
+//  2. Hosts the real CADSketch web app in a nested frame and relays a few
 //     private string messages to it (see lib/mcp/host_bridge_web.dart):
-//        shell -> app  load   parts the model drew
-//        app -> shell  ready  the editor is up
-//        app -> shell  state  what is on the canvas now (for the model)
+//        shell -> app  load / loadDxf   content to show
+//        app -> shell  ready            the editor is up
+//        app -> shell  state            what is on the canvas now
+//  3. When opened on a workspace file, keeps that file and the canvas in sync.
 //
 // No CAD logic lives here; the editor is the same build as cadsketch.ai/app.
-import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables, type McpUiHostContext } from "@modelcontextprotocol/ext-apps";
+import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { OpenAIExtensions, OpenAIFileEntrypointInputSchema } from "@openai/mcp-extensions/app";
+import { canonical, fileKind, parseFile, partsFromState, serializeFile, type FilePart } from "./file-sync.js";
 
 const TO_HOST = "cadsketch>host:";
 const TO_APP = "cadsketch>app:";
@@ -19,6 +24,7 @@ const frame = document.getElementById("app") as HTMLIFrameElement;
 const veil = document.getElementById("veil") as HTMLElement;
 const veilText = document.getElementById("veil-text") as HTMLElement;
 const veilOpen = document.getElementById("veil-open") as HTMLButtonElement;
+const nameEl = document.querySelector(".bar .name") as HTMLElement;
 const statusEl = document.getElementById("status") as HTMLElement;
 const reviewBtn = document.getElementById("review") as HTMLButtonElement;
 const expandBtn = document.getElementById("expand") as HTMLButtonElement;
@@ -27,19 +33,49 @@ const appUrl = new URL(document.documentElement.dataset.appUrl!);
 const standaloneUrl = appUrl.toString();
 appUrl.searchParams.set("mcp", "1");
 
-type State = { structured: Record<string, unknown>; text: string };
+type McpUiHostContext = NonNullable<ReturnType<App["getHostContext"]>>;
+type State = { structured: Record<string, unknown>; text: string; loadId?: number };
+type EditorMessage = { type: "load"; parts: unknown[]; loadId: number } | { type: "loadDxf"; name: string; text: string; loadId: number };
+
+/** The workspace file this instance was opened on, if any. */
+type OpenFile = {
+  name: string;
+  uri: string;
+  kind: "cadsketch" | "dxf";
+  writable: boolean;
+  etag?: string;
+  /** Text we last read or wrote: an update notification carrying it is our own echo. */
+  lastText: string | null;
+  /** The load we are waiting to see reflected by the editor. */
+  pendingLoadId: number | null;
+  /** Canvas as of the last load or save. Only a canvas that differs gets written. */
+  baseline: string | null;
+};
 
 let editorReady = false;
 let connected = false;
-let pendingParts: unknown[] | null = null; // drawn before the editor was up
+let pendingLoad: EditorMessage | null = null; // content that arrived before the editor was up
 let pendingState: State | null = null; // reported before the host was connected
 let displayMode: "inline" | "fullscreen" | "pip" = "inline";
+let file: OpenFile | null = null;
+let nextLoadId = 1;
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+let whenConnected: Promise<void> = Promise.resolve(); // set at the bottom, once connect() is called
 
-const app = new App({ name: "CADSketch", version: "0.1.0" }, { availableDisplayModes: ["inline", "fullscreen"] });
+const app = new App({ name: "CADSketch", version: "0.2.0" }, { availableDisplayModes: ["inline", "fullscreen"] });
+const openai = new OpenAIExtensions(app);
+
+function setStatus(text: string) {
+  statusEl.textContent = text;
+}
 
 // ---- shell <-> editor -------------------------------------------------------
 
-function sendToEditor(message: Record<string, unknown>) {
+function sendToEditor(message: EditorMessage) {
+  if (!editorReady) {
+    pendingLoad = message; // only the latest matters
+    return;
+  }
   // "*" because a host may sandbox nested frames into an opaque origin, where a
   // specific target origin would never match. Nothing in the payload is secret.
   frame.contentWindow?.postMessage(TO_APP + JSON.stringify(message), "*");
@@ -48,7 +84,7 @@ function sendToEditor(message: Record<string, unknown>) {
 window.addEventListener("message", (event) => {
   if (event.source !== frame.contentWindow) return;
   if (typeof event.data !== "string" || !event.data.startsWith(TO_HOST)) return;
-  let message: { type?: string; structured?: Record<string, unknown>; text?: string; message?: string };
+  let message: { type?: string; structured?: Record<string, unknown>; text?: string; message?: string; loadId?: number };
   try {
     message = JSON.parse(event.data.slice(TO_HOST.length));
   } catch {
@@ -58,44 +94,145 @@ window.addEventListener("message", (event) => {
     editorReady = true;
     veil.hidden = true;
     reviewBtn.hidden = false;
-    if (pendingParts) {
-      sendToEditor({ type: "load", parts: pendingParts });
-      pendingParts = null;
+    if (pendingLoad) {
+      const queued = pendingLoad;
+      pendingLoad = null;
+      sendToEditor(queued);
     }
   } else if (message.type === "state" && message.structured && typeof message.text === "string") {
-    reportState({ structured: message.structured, text: message.text });
+    const state = { structured: message.structured, text: message.text, loadId: message.loadId };
+    syncFile(state);
+    reportState(state);
   } else if (message.type === "error" && message.message) {
-    statusEl.textContent = message.message;
+    setStatus(message.message);
   }
 });
 
-// ---- shell <-> host ---------------------------------------------------------
+// ---- canvas -> model --------------------------------------------------------
 
 /** Makes the canvas visible to the model. */
 function reportState(state: State) {
-  const parts = (state.structured.parts as unknown[] | undefined) ?? [];
-  statusEl.textContent = state.text.split("\n")[0].replace(" (mm, Y up).", "");
+  if (!file) setStatus(state.text.split("\n")[0].replace(" (mm, Y up).", ""));
   if (!connected) {
     pendingState = state;
     return;
   }
-  app.updateModelContext({ content: [{ type: "text", text: state.text }], structuredContent: state.structured }).catch(() => {
+  const text = file ? `${state.text}\nOpen file: ${file.name}` : state.text;
+  const params = {
+    content: [{ type: "text" as const, text, _meta: { "openai/title": file ? file.name : "CADSketch canvas" } }],
+    structuredContent: state.structured,
+  };
+  const update: Promise<unknown> = openai.modelContext ? openai.modelContext.update(params) : app.updateModelContext(params);
+  update.catch(() => {
     // Hosts without model-context support: ChatGPT's own widget state reaches
     // the model too, so fall back to it when it exists.
-    const openai = (window as unknown as { openai?: { setWidgetState?: (s: unknown) => void } }).openai;
-    openai?.setWidgetState?.({ modelContent: state.text, privateContent: { parts } });
+    const legacy = (window as unknown as { openai?: { setWidgetState?: (s: unknown) => void } }).openai;
+    legacy?.setWidgetState?.({ modelContent: text, privateContent: state.structured });
   });
 }
 
+// ---- workspace file <-> canvas ----------------------------------------------
+
+async function openFile(input: { name: string; resourceUri: string }) {
+  const kind = fileKind(input.name);
+  if (!kind) return setStatus(`CADSketch can't open ${input.name}.`);
+  file = { name: input.name, uri: input.resourceUri, kind, writable: false, lastText: null, pendingLoadId: null, baseline: null };
+  nameEl.textContent = input.name;
+  await whenConnected; // host capabilities (and so openai.resources) exist only after the handshake
+  const resources = openai.resources;
+  if (!resources) return setStatus("This app can't read workspace files.");
+  resources.addUpdateHandler(async ({ params }) => {
+    if (file && params.uri === file.uri) await readFile();
+  });
+  await readFile();
+  await resources.subscribe({ uri: input.resourceUri }).catch(() => {});
+}
+
+async function readFile() {
+  const resources = openai.resources;
+  if (!file || !resources) return;
+  try {
+    const result = await resources.read({ uri: file.uri, representation: "text" });
+    const content = result.contents[0];
+    if (!content) throw new Error(`${file.name} could not be read.`);
+    const text =
+      "text" in content && typeof content.text === "string"
+        ? content.text
+        : new TextDecoder().decode(Uint8Array.from(atob(String((content as { blob?: string }).blob ?? "")), (c) => c.charCodeAt(0)));
+    file.etag = content.openaiMetadata?.etag;
+    file.writable = content.openaiMetadata?.writable === true && file.kind === "cadsketch";
+    if (text === file.lastText) return; // our own save coming back
+    file.lastText = text;
+    const opened = parseFile(file.name, text);
+    file.pendingLoadId = nextLoadId++;
+    file.baseline = null;
+    if (opened.kind === "dxf") sendToEditor({ type: "loadDxf", name: file.name.replace(/\.dxf$/i, ""), text: opened.text, loadId: file.pendingLoadId });
+    else sendToEditor({ type: "load", parts: opened.parts, loadId: file.pendingLoadId });
+    setStatus(file.writable ? "" : "read-only");
+  } catch (e) {
+    setStatus((e as Error).message);
+  }
+}
+
+/** Writes the canvas back to the open .cadsketch file when the user changed it. */
+function syncFile(state: State) {
+  if (!file || file.kind !== "cadsketch") return;
+  const { parts, blocker } = partsFromState(state.structured);
+  const now = canonical(parts);
+  if (file.pendingLoadId !== null) {
+    // Wait for the editor to reflect what we loaded; that becomes the baseline,
+    // so merely opening a file never rewrites it.
+    if (state.loadId !== file.pendingLoadId) return;
+    file.pendingLoadId = null;
+    file.baseline = now;
+    return;
+  }
+  if (now === file.baseline) return;
+  if (blocker) return setStatus(`not saved: ${blocker}`);
+  if (!file.writable) return setStatus("read-only: changes are not saved");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => void saveFile(parts, now), 400);
+}
+
+async function saveFile(parts: FilePart[], key: string) {
+  const resources = openai.resources;
+  if (!file || !resources) return;
+  const text = serializeFile(parts);
+  try {
+    const result = await resources.write(file.uri, { text, ...(file.etag ? { ifMatch: file.etag } : {}) });
+    if (result.outcome === "saved") {
+      file.etag = result.etag;
+      file.lastText = text;
+      file.baseline = key;
+      setStatus("saved");
+    } else if (result.outcome === "too-large") {
+      setStatus(`not saved: file would exceed ${result.maxBytes} bytes`);
+    } else {
+      setStatus("file changed on disk: reloaded");
+      file.lastText = null;
+      await readFile();
+    }
+  } catch (e) {
+    setStatus(`not saved: ${(e as Error).message}`);
+  }
+}
+
+// ---- host -> shell ----------------------------------------------------------
+
+// A file entrypoint delivers the file as the tool INPUT; register before
+// connecting so the initial one is not missed.
+app.addEventListener("toolinput", ({ arguments: args }) => {
+  const input = OpenAIFileEntrypointInputSchema.safeParse(args);
+  if (input.success) void openFile(input.data.file);
+});
+
 app.ontoolresult = (result) => {
+  if (result.isError || file) return; // a file instance is driven by its file
   const parts = (result.structuredContent as { parts?: unknown[] } | undefined)?.parts;
-  if (!Array.isArray(parts) || result.isError) return;
-  if (editorReady) sendToEditor({ type: "load", parts });
-  else pendingParts = parts;
+  if (Array.isArray(parts)) sendToEditor({ type: "load", parts, loadId: nextLoadId++ });
 };
 
 app.onteardown = async () => ({});
-app.onerror = console.error;
 
 function applyHostContext(ctx: McpUiHostContext) {
   if (ctx.theme) applyDocumentTheme(ctx.theme);
@@ -105,15 +242,14 @@ function applyHostContext(ctx: McpUiHostContext) {
   if (ctx.availableDisplayModes) expandBtn.hidden = !ctx.availableDisplayModes.includes("fullscreen");
   expandBtn.textContent = displayMode === "fullscreen" ? "Shrink" : "Expand";
 
-  // The host sizes the widget from its content height, so set the editor
-  // stage explicitly. Inline: a fixed, usable height. Fullscreen: fill what
-  // the host gives us (or the viewport when it doesn't say).
+  // The host sizes the widget from its content height, so set the editor stage
+  // explicitly. A host that gives a fixed height (sidebar app, file tab,
+  // fullscreen) gets filled; an inline card gets a fixed, usable height.
   const dims = ctx.containerDimensions as { height?: number; maxHeight?: number } | undefined;
   const bar = (document.querySelector(".bar") as HTMLElement).offsetHeight;
   const total =
-    displayMode === "fullscreen"
-      ? (dims?.height ?? dims?.maxHeight ?? window.innerHeight)
-      : Math.min(INLINE_HEIGHT, dims?.maxHeight ?? INLINE_HEIGHT);
+    dims?.height ??
+    (displayMode === "fullscreen" ? (dims?.maxHeight ?? window.innerHeight) : Math.min(INLINE_HEIGHT, dims?.maxHeight ?? INLINE_HEIGHT));
   document.documentElement.style.setProperty("--stage-h", `${Math.max(240, total - bar)}px`);
 }
 
@@ -132,16 +268,17 @@ expandBtn.addEventListener("click", async () => {
 
 reviewBtn.addEventListener("click", async () => {
   reviewBtn.disabled = true;
+  const message = {
+    role: "user" as const,
+    content: [
+      {
+        type: "text" as const,
+        text: "Review my current CADSketch sketch. Is the profile closed and fully defined? Call out anything that would be hard to make (thin walls, holes too close to an edge, sharp internal corners) and suggest specific improvements.",
+      },
+    ],
+  };
   try {
-    await app.sendMessage({
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: "Review my current CADSketch sketch. Is the profile closed and fully defined? Call out anything that would be hard to make (thin walls, holes too close to an edge, sharp internal corners) and suggest specific improvements.",
-        },
-      ],
-    });
+    await (openai.message ? openai.message.send(message) : app.sendMessage(message));
   } catch (e) {
     console.error(e);
   } finally {
@@ -187,11 +324,11 @@ setTimeout(() => {
   (veil.querySelector("b") as HTMLElement).textContent = "CADSketch didn't load here";
   veilText.textContent = `${detail} You can still use it in a browser tab. (${reason})`;
   veilOpen.hidden = false;
-  statusEl.textContent = `editor unavailable: ${reason}`;
+  setStatus(`editor unavailable: ${reason}`);
   if (connected) app.sendLog({ level: "error", data: `CADSketch editor failed to start: ${reason}${blocked ? " " + blocked : ""}` }).catch(() => {});
 }, 20000);
 
-app.connect().then(() => {
+whenConnected = app.connect().then(() => {
   connected = true;
   const ctx = app.getHostContext();
   if (ctx) applyHostContext(ctx);

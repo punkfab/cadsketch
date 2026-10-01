@@ -1,23 +1,36 @@
-// End-to-end over real HTTP: a client lists the tools, draws parts, and reads
-// the widget, exactly as a host does.
+// End-to-end over the real transports: a client lists the tools, draws parts,
+// and reads the widget, exactly as a host does. Once over HTTP (the remote
+// server) and once over stdio (the bundled server a Codex plugin launches).
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { fileURLToPath } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { start } from "../dist/main.js";
 import { report, tessellate } from "../dist/geometry.js";
 
+const WIDGET = "ui://cadsketch/sketcher-v3.html";
+const PLUGIN_DIR = fileURLToPath(new URL("../../plugin/cadsketch/", import.meta.url));
+
 let httpServer;
 let client;
+let pluginClient;
 
 before(async () => {
   httpServer = await start(0);
   const { port } = httpServer.address();
   client = new Client({ name: "test-host", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
+
+  // Launched exactly as plugin/cadsketch/.mcp.json says.
+  pluginClient = new Client({ name: "test-codex", version: "0.0.0" });
+  await pluginClient.connect(new StdioClientTransport({ command: "node", args: ["./dist/server.js"], cwd: PLUGIN_DIR }));
 });
 
 after(async () => {
   await client?.close();
+  await pluginClient?.close();
   await new Promise((r) => httpServer.close(r));
 });
 
@@ -28,15 +41,31 @@ const bracket = {
   holes: [[8, 10, 2.25], [32, 10, 2.25]],
 };
 
-test("both tools are listed and linked to the widget", async () => {
+test("the tools are listed and linked to the widget", async () => {
   const { tools } = await client.listTools();
-  const names = tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["draw_parts", "open_sketcher"]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["draw_parts", "open_file", "open_sketcher"]);
   for (const t of tools) {
-    assert.equal(t._meta?.ui?.resourceUri, "ui://cadsketch/sketcher-v2.html");
-    assert.equal(t._meta?.["openai/outputTemplate"], "ui://cadsketch/sketcher-v2.html");
+    assert.equal(t._meta?.ui?.resourceUri, WIDGET);
+    assert.equal(t._meta?.["openai/outputTemplate"], WIDGET);
     assert.equal(t.annotations?.readOnlyHint, true);
   }
+});
+
+test("extension entrypoints: sidebar + thread panel, and a file viewer", async () => {
+  const { tools } = await client.listTools();
+  const by = Object.fromEntries(tools.map((t) => [t.name, t]));
+  assert.deepEqual(by.open_sketcher._meta["openai/ui"].entrypoints, [{ type: "global" }, { type: "thread" }]);
+  assert.deepEqual(by.open_file._meta["openai/ui"].entrypoints, [{ type: "file", extensions: [".cadsketch", ".dxf"] }]);
+  // The model-facing tool is not an entrypoint.
+  assert.equal(by.draw_parts._meta["openai/ui"], undefined);
+  // Entrypoint tools must accept what the host passes: {} and a FileInput.
+  assert.deepEqual(by.open_sketcher.inputSchema.required ?? [], []);
+  assert.deepEqual(by.open_file.inputSchema.required, ["file"]);
+  const opened = await client.callTool({ name: "open_sketcher", arguments: {} });
+  assert.deepEqual(opened.structuredContent, { parts: [] });
+  const file = { name: "bracket.cadsketch", resourceUri: "host-resource://abc" };
+  const viewed = await client.callTool({ name: "open_file", arguments: { file } });
+  assert.deepEqual(viewed.structuredContent, { file });
 });
 
 test("draw_parts returns the parts for the widget and a report for the model", async () => {
@@ -73,23 +102,34 @@ test("a part with neither profile nor circle is refused, not drawn", async () =>
   assert.match(result.content[0].text, /Nothing was drawn/);
 });
 
-test("open_sketcher opens an empty canvas", async () => {
-  const result = await client.callTool({ name: "open_sketcher", arguments: {} });
-  assert.deepEqual(result.structuredContent, { parts: [] });
-});
-
 test("the widget is a self-contained page that frames only the CADSketch app", async () => {
-  const { contents } = await client.readResource({ uri: "ui://cadsketch/sketcher-v2.html" });
+  const { contents } = await client.readResource({ uri: WIDGET });
   const [res] = contents;
-  // A host with a cached tool list still asks for the old address.
-  const legacy = await client.readResource({ uri: "ui://cadsketch/sketcher-v1.html" });
-  assert.equal(legacy.contents[0].text, res.text);
   assert.equal(res.mimeType, "text/html;profile=mcp-app");
   assert.match(res.text, /data-app-url="https:\/\/cadsketch\.ai\/app\/"/);
   assert.ok(!res.text.includes("%%"), "all placeholders filled");
   assert.ok(!/<script[^>]+src=/.test(res.text), "no external scripts");
   assert.deepEqual(res._meta.ui.csp.frameDomains, ["https://cadsketch.ai"]);
   assert.deepEqual(res._meta.ui.csp.connectDomains, []);
+  assert.deepEqual(res._meta["openai/ui"].availableDisplayModes, ["inline", "fullscreen"]);
+  // A host with a cached tool list still asks for an older address.
+  for (const old of ["ui://cadsketch/sketcher-v2.html", "ui://cadsketch/sketcher-v1.html"]) {
+    const legacy = await client.readResource({ uri: old });
+    assert.equal(legacy.contents[0].text, res.text);
+  }
+});
+
+test("the bundled plugin server (stdio) is the same server", async () => {
+  const info = pluginClient.getServerVersion();
+  assert.equal(info.name, "cadsketch");
+  assert.equal(info.title, "CADSketch");
+  assert.match(info.icons[0].src, /^data:image\/svg\+xml,/);
+  const { tools } = await pluginClient.listTools();
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["draw_parts", "open_file", "open_sketcher"]);
+  const result = await pluginClient.callTool({ name: "draw_parts", arguments: { parts: [bracket] } });
+  assert.equal(result.structuredContent.report[0].width_mm, 40);
+  const { contents } = await pluginClient.readResource({ uri: WIDGET });
+  assert.match(contents[0].text, /data-app-url="https:\/\/cadsketch\.ai\/app\/"/);
 });
 
 test("bulge arcs: a semicircle end adds half a disc of area", () => {

@@ -1,0 +1,20 @@
+{
+  "name": "cadsketch",
+  "interface": {
+    "displayName": "CADSketch"
+  },
+  "plugins": [
+    {
+      "name": "cadsketch",
+      "source": {
+        "source": "local",
+        "path": "./plugin/cadsketch"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

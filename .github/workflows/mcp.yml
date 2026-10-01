@@ -1,6 +1,6 @@
 name: MCP server
 
-# Builds and tests the AI-host server in mcp/. Separate from the web deploy:
+# Builds and tests the AI-host server in mcp/ and the plugin it bundles. Separate from the web deploy:
 # nothing here publishes anything.
 
 on:
@@ -8,10 +8,13 @@ on:
     branches: [main]
     paths:
       - 'mcp/**'
+      - 'plugin/**'
+      - '.agents/**'
       - '.github/workflows/mcp.yml'
   pull_request:
     paths:
       - 'mcp/**'
+      - 'plugin/**'
   workflow_dispatch:
 
 jobs:

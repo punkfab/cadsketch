@@ -57,8 +57,12 @@ void main() {
           PointerScrollEvent(position: cursor, scrollDelta: Offset(0, dy)));
       await tester.pump();
     }
+    // A trackpad pinch reaches a web build as a scale signal.
+    await tester.sendEventToBinding(
+        const PointerScaleEvent(position: cursor, scale: 0.8));
+    await tester.pump();
     final after = _view(tester);
-    expect(after.zoom, lessThan(before.zoom));
+    expect(after.zoom, lessThan(before.zoom * 0.8));
     expect(((cursor - after.pan) / after.zoom - under).distance, lessThan(1e-6));
   });
 

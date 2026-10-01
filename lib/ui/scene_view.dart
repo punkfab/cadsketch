@@ -94,9 +94,13 @@ class _SceneViewState extends State<SceneView> {
   /// Scroll-wheel zoom about the cursor: what is under [focal] stays under it.
   /// The view draws at viewCentre + _pan + projected * scale, with scale
   /// proportional to _zoom, so the pan scales about the cursor with it.
-  void _zoomBy(double dy, Offset focal, Size view) => setState(() {
+  void _zoomBy(double dy, Offset focal, Size view) =>
+      _zoomTimes(dy > 0 ? 1 / 1.12 : 1.12, focal, view);
+
+  /// Also what a trackpad pinch arrives as on the web (a scale signal).
+  void _zoomTimes(double factor, Offset focal, Size view) => setState(() {
         final before = _zoom;
-        _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(0.2, 12.0);
+        _zoom = (_zoom * factor).clamp(0.2, 12.0);
         final fromCentre = focal - view.center(Offset.zero);
         _pan = fromCentre - (fromCentre - _pan) * (_zoom / before);
       });
@@ -327,6 +331,8 @@ class _SceneViewState extends State<SceneView> {
                 onPointerSignal: (e) {
                   if (e is PointerScrollEvent) {
                     _zoomBy(e.scrollDelta.dy, e.localPosition, size);
+                  } else if (e is PointerScaleEvent) {
+                    _zoomTimes(e.scale, e.localPosition, size);
                   }
                 },
                 onPointerDown: (e) {

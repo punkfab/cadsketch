@@ -230,9 +230,14 @@ class _SketchCanvasState extends State<SketchCanvas> {
   /// under it. (Zooming about a fixed anchor sent the drawing sliding away
   /// whenever the view was panned or had been fitted to a part.) Same relation
   /// as the pinch: _pan = paneCenter - anchor*z + _userPan.
-  void _zoomBy(double dy, Offset focal) => setState(() {
+  void _zoomBy(double dy, Offset focal) =>
+      _zoomTimes(dy > 0 ? 1 / 1.12 : 1.12, focal);
+
+  /// Multiplies the zoom by [factor] about [focal]. Also what a trackpad pinch
+  /// arrives as on the web (a scale signal, not a scroll).
+  void _zoomTimes(double factor, Offset focal) => setState(() {
         final under = _toModel(focal);
-        _zoom = (_zoom * (dy > 0 ? 1 / 1.12 : 1.12)).clamp(_minZoom, _maxZoom);
+        _zoom = (_zoom * factor).clamp(_minZoom, _maxZoom);
         _userPan = focal - under * _zoom - _paneCenter + _anchor * _zoom;
       });
 
@@ -664,6 +669,8 @@ class _SketchCanvasState extends State<SketchCanvas> {
                       onPointerSignal: (e) {
                         if (e is PointerScrollEvent) {
                           _zoomBy(e.scrollDelta.dy, e.localPosition);
+                        } else if (e is PointerScaleEvent) {
+                          _zoomTimes(e.scale, e.localPosition);
                         }
                       },
                       child: CustomPaint(

@@ -2,7 +2,9 @@
   "mcpServers": {
     "cadsketch": {
       "command": "node",
-      "args": ["./dist/server.js"],
+      "args": [
+        "./dist/server.mjs"
+      ],
       "cwd": "."
     }
   }

@@ -141,6 +141,10 @@ npm run dev     # http://localhost:3001/mcp, editor = https://cadsketch.ai/app/
 `npm run build` also writes `../plugin/cadsketch/dist/`. Commit it: a plugin
 installed from Git is not built on the user's machine.
 
+Developing here needs Node 22 (the test runner's glob support). The bundled
+plugin server itself runs on Node 18 and later: it is built as `server.mjs` so
+Node never has to guess that it is an ES module, which older versions will not.
+
 The desktop app's UI can't be run in CI, so `e2e/fake-host.mjs` stands in for
 it: a page that speaks the host side of MCP Apps plus OpenAI's file-resource
 extension, driven by Playwright against a real Flutter build.

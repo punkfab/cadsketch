@@ -28,7 +28,7 @@ before(async () => {
 
   // Launched exactly as plugin/cadsketch/.mcp.json says.
   pluginClient = new Client({ name: "test-codex", version: "0.0.0" });
-  await pluginClient.connect(new StdioClientTransport({ command: "node", args: ["./dist/server.js"], cwd: PLUGIN_DIR }));
+  await pluginClient.connect(new StdioClientTransport({ command: "node", args: ["./dist/server.mjs"], cwd: PLUGIN_DIR }));
 });
 
 after(async () => {
@@ -138,6 +138,15 @@ test("the bundled plugin server (stdio) is the same server", async () => {
   assert.match(contents[0].text, /data-app-url="https:\/\/cadsketch\.ai\/app\/"/);
 });
 
+test("the plugin launches exactly as its .mcp.json says, as an unambiguous ES module", async () => {
+  const mcp = JSON.parse(await readFile(path.join(PLUGIN_DIR, ".mcp.json"), "utf8"));
+  const { command, args } = mcp.mcpServers.cadsketch;
+  assert.equal(command, "node");
+  // .mjs so Node never has to guess the module type (Node < 20.19 would not).
+  assert.deepEqual(args, ["./dist/server.mjs"]);
+  await readFile(path.join(PLUGIN_DIR, args[0]));
+});
+
 test("check_parts validates without opening the editor", async () => {
   const ok = await client.callTool({ name: "check_parts", arguments: { parts: [bracket] } });
   assert.equal(ok.structuredContent.report[0].width_mm, 40);
@@ -190,7 +199,7 @@ test("the directory package builds and passes the portal's limits", async () => 
     assert.ok(out.includes(entry), `ZIP is missing ${entry}`);
   }
   // The local server bundle must not ship to the directory.
-  assert.ok(!out.includes("dist/server.js"));
+  assert.ok(!out.includes("dist/server."));
   const staged = JSON.parse(await readFile(new URL("../dist/directory/cadsketch/.codex-plugin/plugin.json", import.meta.url), "utf8"));
   assert.equal(staged.extensions["com.openai"].review.test_cases.positive.length, 5);
   assert.equal(staged.extensions["com.openai"].review.test_cases.negative.length, 3);

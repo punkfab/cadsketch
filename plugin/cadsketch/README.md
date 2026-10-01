@@ -11,7 +11,9 @@ Puts the CADSketch editor inside the Codex / ChatGPT desktop app:
 
 ## Install
 
-Needs Node.js 22 or later and a recent Codex (tested with 0.157). Nothing to build: `dist/` is
+Needs Node.js 18 or later and a recent Codex (tested with 0.157). Node is needed because the
+app runs the plugin's server on your machine; that server is one bundled file
+with no dependencies to install. Nothing to build: `dist/` is
 committed.
 
 ```sh
@@ -35,7 +37,7 @@ cadsketch@cadsketch`, then `codex plugin add cadsketch@cadsketch`.
 ## What is in here
 
 - `.codex-plugin/plugin.json` — the manifest.
-- `.mcp.json` — launches `dist/server.js` (a single bundled file) over stdio.
+- `.mcp.json` — launches `dist/server.mjs` (a single bundled file) over stdio.
 - `dist/widget.html` — the page the app renders; it frames `cadsketch.ai/app`.
 - `skills/cadsketch/SKILL.md` — teaches the agent the part format and workflow.
 

@@ -47,10 +47,12 @@ await copyFile("widget/icon.svg", "dist/icon.svg");
 // --- plugin: one bundled stdio server -----------------------------------------
 await build({
   entryPoints: ["src/stdio.ts"],
-  outfile: `${PLUGIN_DIST}/server.js`,
+  // .mjs, not .js: the plugin folder has no package.json to say "this is an ES
+  // module", and Node before 20.19 will not guess. The extension settles it.
+  outfile: `${PLUGIN_DIST}/server.mjs`,
   platform: "node",
   format: "esm",
-  target: "node22",
+  target: "node18",
   bundle: true,
   minify: false,
   legalComments: "none",

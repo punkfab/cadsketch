@@ -22,7 +22,7 @@ files from your workspace in it, and lets the agent work in the same sketch you
 are looking at: read the canvas, move vertices, add holes, set driving
 dimensions and constraints, undo, take a screenshot, and export STL.
 
-Needs Node.js 22 or later and a recent Codex (tested with 0.157).
+Needs Node.js 18 or later and a recent Codex (tested with 0.157).
 
 ```sh
 codex plugin marketplace add punkfab/cadsketch

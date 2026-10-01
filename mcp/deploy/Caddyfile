@@ -1,0 +1,6 @@
+# TLS is automatic. mcp.cadsketch.ai needs an A record to this machine; until
+# it exists Caddy keeps retrying that name and serves the sslip.io one.
+mcp.cadsketch.ai, 64-23-228-132.sslip.io {
+	encode gzip
+	reverse_proxy 127.0.0.1:3001
+}

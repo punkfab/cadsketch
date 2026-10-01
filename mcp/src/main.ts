@@ -7,7 +7,12 @@ import { APP_URL, createServer } from "./server.js";
 
 /** Starts the HTTP server. Stateless: a fresh MCP server per request. */
 export function start(port: number): Promise<Server> {
-  const app = createMcpExpressApp({ host: "0.0.0.0" });
+  // HOST: the interface to bind. Behind a reverse proxy use 127.0.0.1 and list
+  // the public hostnames in MCP_ALLOWED_HOSTS (comma separated), which the SDK
+  // checks against the Host header (DNS-rebinding protection).
+  const host = process.env.HOST ?? "0.0.0.0";
+  const allowedHosts = process.env.MCP_ALLOWED_HOSTS?.split(",").map((h) => h.trim()).filter(Boolean);
+  const app = createMcpExpressApp({ host, ...(allowedHosts?.length ? { allowedHosts } : {}) });
   app.use(cors());
 
   app.all("/mcp", async (req: Request, res: Response) => {
@@ -41,7 +46,7 @@ export function start(port: number): Promise<Server> {
   });
 
   return new Promise((resolve, reject) => {
-    const httpServer = app.listen(port, (err?: Error) => {
+    const httpServer = app.listen(port, host, (err?: Error) => {
       if (err) return reject(err);
       resolve(httpServer);
     });

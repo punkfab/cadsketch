@@ -1,0 +1,36 @@
+[Unit]
+Description=CADSketch MCP server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=cadsketch
+Group=cadsketch
+WorkingDirectory=/opt/cadsketch-mcp
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=2
+Environment=NODE_ENV=production
+Environment=PORT=3001
+Environment=HOST=127.0.0.1
+Environment=CADSKETCH_APP_URL=https://cadsketch.ai/app/
+# Hostnames Caddy forwards. Add new public names here and in the Caddyfile.
+Environment=MCP_ALLOWED_HOSTS=mcp.cadsketch.ai,64-23-228-132.sslip.io,localhost,127.0.0.1
+# Optional: OpenAI domain-verification token, in /etc/cadsketch-mcp.env as
+#   OPENAI_APPS_CHALLENGE=...
+EnvironmentFile=-/etc/cadsketch-mcp.env
+
+# The server is stateless and needs nothing but its own files.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

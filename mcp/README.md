@@ -77,9 +77,20 @@ this was verified end to end.
 
 ChatGPT needs a public HTTPS URL for `/mcp`.
 
-1. Expose the server. Temporary: `sudo tailscale funnel 3001` while `npm run dev`
-   is running. Permanent: add the service in `do-service.yaml` to the
-   DigitalOcean app, which puts it at `https://cadsketch.ai/mcp`.
+1. Expose the server. It runs on a small droplet behind Caddy (automatic
+   HTTPS), deployed with one script from `mcp/`:
+
+   ```sh
+   deploy/deploy.sh --setup   # first time: swap, Node 22, Caddy, firewall, service user
+   deploy/deploy.sh           # every update: build, copy dist/, restart
+   ```
+
+   It answers at `https://mcp.cadsketch.ai/mcp` once that name has an A record
+   to the droplet, and at `https://64-23-228-132.sslip.io/mcp` without any DNS.
+   The repo is private, so nothing is cloned on the server; only `dist/` and
+   the package manifests are copied. Files: `deploy/` (systemd unit, Caddyfile,
+   setup). For a throwaway test instead: `npm run dev` plus
+   `sudo tailscale funnel 3001`.
 2. ChatGPT → Settings → Security and login → enable **Developer mode**.
 3. ChatGPT → Plugins → **+** → name "CADSketch", the `/mcp` URL, no auth.
 4. In a new chat: *"Use CADSketch to draw a 60 × 30 mm L-bracket, 5 mm thick,
@@ -109,6 +120,6 @@ connection, start a new chat.
 
 Needs, beyond a working endpoint: a verified OpenAI organization, logo and
 composer icon, website / support / privacy / terms URLs, the domain challenge
-(`OPENAI_APPS_CHALLENGE` env var is served at
-`/.well-known/openai-apps-challenge`), five positive and three negative test
+(put `OPENAI_APPS_CHALLENGE=...` in `/etc/cadsketch-mcp.env` on the server; it is
+served at `/.well-known/openai-apps-challenge`), five positive and three negative test
 cases, and a video walkthrough.

@@ -1,0 +1,34 @@
+name: MCP server
+
+# Builds and tests the AI-host server in mcp/. Separate from the web deploy:
+# nothing here publishes anything.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mcp/**'
+      - '.github/workflows/mcp.yml'
+  pull_request:
+    paths:
+      - 'mcp/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mcp/package-lock.json
+      - run: npm ci
+      - name: Type-check
+        run: npx tsc
+      - name: Build and test (end to end over HTTP)
+        run: npm test

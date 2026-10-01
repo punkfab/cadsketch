@@ -1,0 +1,31 @@
+{
+  "name": "cadsketch-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CADSketch as an MCP App: lets ChatGPT, Claude and other MCP hosts draw parts into the CADSketch editor and read back what the user sketched.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/main.js",
+    "dev": "node build.mjs && node dist/main.js",
+    "test": "node build.mjs && node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/express": "^2.0.1",
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/node": "^2.1.0",
+    "@modelcontextprotocol/server": "^2.2.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3"
+  }
+}

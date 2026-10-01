@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-app-url="%%APP_URL%%">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CADSketch</title>
+<style>
+  :root {
+    /* Blueprint palette from cadsketch.ai; host theme variables win when present. */
+    --bar-bg: var(--color-background-secondary, #0F2747);
+    --bar-ink: var(--color-text-primary, #FFFFFF);
+    --bar-dim: var(--color-text-secondary, #8FB3DE);
+    --bar-rule: var(--color-border-primary, rgba(255, 255, 255, 0.24));
+    --font: var(--font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  /* The host sizes the widget from its natural content height, so the editor
+     stage carries an explicit height (set from the host's container in JS). */
+  body { margin: 0; display: flex; flex-direction: column; font-family: var(--font); background: #0F2747; overflow: hidden; }
+  .bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: var(--bar-bg); color: var(--bar-ink); border-bottom: 1px solid var(--bar-rule); font-size: 13px; }
+  .bar .name { font-weight: 600; letter-spacing: 0.01em; }
+  .bar .status { color: var(--bar-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+  .bar button { font: inherit; font-size: 12px; color: var(--bar-ink); background: transparent; border: 1px solid var(--bar-rule); padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  .bar button:hover { border-color: var(--bar-ink); }
+  .bar button:focus-visible { outline: 2px solid var(--bar-ink); outline-offset: 2px; }
+  .stage { flex: none; height: var(--stage-h, 580px); position: relative; }
+  iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .veil { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: #C5D8F0; background: #0F2747; font-size: 14px; line-height: 1.5; }
+  .veil b { display: block; color: #fff; font-size: 16px; margin-bottom: 6px; }
+  .veil button { margin-top: 14px; font: inherit; color: #0F2747; background: #fff; border: 0; padding: 9px 16px; cursor: pointer; font-weight: 600; }
+  @media (max-width: 420px) { .bar .status { display: none; } .bar .name { flex: 1; } }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <span class="name">CADSketch</span>
+    <span class="status" id="status" role="status"></span>
+    <button id="review" type="button" hidden>Review this sketch</button>
+    <button id="expand" type="button" hidden>Expand</button>
+  </div>
+  <div class="stage">
+    <iframe id="app" title="CADSketch editor" allow="clipboard-write"></iframe>
+    <div class="veil" id="veil"><div><b>Loading CADSketch…</b><span id="veil-text">Starting the sketch editor.</span><div><button id="veil-open" type="button" hidden>Open CADSketch in a new tab</button></div></div></div>
+  </div>
+  <script>/*%%SHELL_JS%%*/</script>
+</body>
+</html>

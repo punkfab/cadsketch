@@ -6,6 +6,7 @@ import 'export/mesh_export.dart';
 import 'export/stl.dart';
 import 'export/stl_export.dart';
 import 'ffi/sketch_kernel.dart';
+import 'mcp/host_bridge.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'sketch/dxf.dart';
@@ -76,8 +77,19 @@ class _SketchHomeState extends State<SketchHome> {
     }
   }
 
+  // Non-null only when the web build is embedded as an AI-host widget (see
+  // lib/mcp/host_bridge.dart). Null on iOS, desktop, and the plain web app.
+  HostBridge? _hostBridge;
+
+  @override
+  void initState() {
+    super.initState();
+    _hostBridge = HostBridge.attach(_controller);
+  }
+
   @override
   void dispose() {
+    _hostBridge?.dispose();
     if (_ownsController) _controller.dispose();
     super.dispose();
   }

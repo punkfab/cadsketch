@@ -235,6 +235,24 @@ class _SketchCanvasState extends State<SketchCanvas> {
         _userPan = Offset.zero;
       });
 
+  // Zoom-to-fit, on request (see SketchController.requestFitView). Runs inside
+  // build, where the pane size is known; only ever in response to a request, so
+  // the default view (zoom 1, no pan) is untouched for normal use.
+  int _handledFit = 0;
+  void _applyPendingFit(Size pane) {
+    final c = widget.controller;
+    if (c.fitViewRequests == _handledFit) return;
+    _handledFit = c.fitViewRequests;
+    final b = c.activeBounds();
+    if (b == null || pane.isEmpty) return;
+    const margin = 0.7; // content fills 70% of the pane
+    final zx = b.width > 1e-6 ? pane.width * margin / b.width : _maxZoom;
+    final zy = b.height > 1e-6 ? pane.height * margin / b.height : _maxZoom;
+    _zoom = math.min(zx, zy).clamp(_minZoom, 40.0);
+    // _pan = paneCenter - anchor*zoom + userPan; put the content centre there.
+    _userPan = (_anchor - b.center) * _zoom;
+  }
+
   /// Movement below this (logical px) counts as a tap, not a stroke/drag.
   /// Generous enough to absorb stylus jitter on a tap.
   static const double _tapSlop = 10.0;
@@ -597,6 +615,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
               _anchor = SketchCanvas.anchorModel(constraints.biggest, reference);
               _paneCenter = Offset(
                   constraints.maxWidth / 2, constraints.maxHeight / 2);
+              _applyPendingFit(constraints.biggest);
               _pan = _paneCenter - _anchor * _zoom + _userPan;
               final sel = _sel;
               final segHi = _selected ??
@@ -813,6 +832,31 @@ class SketchController extends ChangeNotifier {
   void cancelSketchEdit() {
     _recordingSuspended = false;
     if (_undo.isNotEmpty && identical(_undo.last.part, active)) _undo.removeLast();
+  }
+
+  /// Bumped to ask the 2D canvas to zoom-to-fit the active part. Used when
+  /// geometry arrives from outside (an AI host drawing a part), where the
+  /// coordinates have nothing to do with where the canvas happens to look.
+  int fitViewRequests = 0;
+  void requestFitView() {
+    fitViewRequests++;
+    notifyListeners();
+  }
+
+  /// Bounding box of the active part's sketch (vertices + circles), in model
+  /// coords; null when it is empty.
+  Rect? activeBounds() {
+    Rect? box;
+    void grow(Rect r) => box = box == null ? r : box!.expandToInclude(r);
+    for (final p in model.points) {
+      grow(Rect.fromCenter(center: p, width: 0, height: 0));
+    }
+    for (final e in decorations) {
+      if (e is CircleEntity) {
+        grow(Rect.fromCircle(center: e.center, radius: e.radius));
+      }
+    }
+    return box;
   }
 
   /// True if the document holds anything worth a confirm before a reset.

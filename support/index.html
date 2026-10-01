@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CADSketch — Support</title>
+  <meta name="description" content="Help and contact for CADSketch, the sketch-to-3D CAD app for iPad.">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root{--sheet:#0F2747;--panel:#143461;--ink:#fff;--body:#C5D8F0;--pale:#8FB3DE;--rule:rgba(255,255,255,.24);--rule-faint:rgba(255,255,255,.10);--redline:#FF6B6B;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Space Grotesk',system-ui,sans-serif;background:var(--sheet);color:var(--body);line-height:1.6;-webkit-font-smoothing:antialiased;
+      background-image:linear-gradient(var(--rule-faint) 1px,transparent 1px),linear-gradient(90deg,var(--rule-faint) 1px,transparent 1px);background-size:28px 28px;}
+    .wrap{max-width:760px;margin:0 auto;padding:72px 24px 96px;}
+    .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--pale);}
+    h1{font-size:clamp(30px,5vw,44px);font-weight:700;color:var(--ink);margin:10px 0 6px;letter-spacing:-.01em;}
+    .updated{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--pale);margin-bottom:36px;}
+    h2{color:var(--ink);font-size:19px;font-weight:600;margin:34px 0 10px;}
+    p{margin:0 0 14px;}
+    ol{margin:0 0 14px;padding-left:22px;}li{margin:0 0 8px;}
+    a{color:var(--ink);text-decoration:underline;text-decoration-color:var(--redline);text-underline-offset:3px;}
+    .lede{color:var(--ink);font-size:19px;border-left:2px solid var(--redline);padding-left:16px;margin:0 0 30px;}
+    .frame{border:1px solid var(--rule);padding:36px 32px;background:rgba(20,52,97,.35);}
+    .contact{font-family:'IBM Plex Mono',monospace;font-size:15px;color:var(--ink);margin-top:6px;}
+    .back{display:inline-block;margin-top:40px;font-family:'IBM Plex Mono',monospace;font-size:13px;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="frame">
+      <div class="eyebrow">CADSketch</div>
+      <h1>Support</h1>
+      <div class="updated">CAD sketching for iPad, iPhone, the web, and AI apps</div>
+
+      <p class="lede">CADSketch turns rough drawings into clean, constrained geometry — then into 3D parts.</p>
+
+      <h2>Getting started</h2>
+      <ol>
+        <li>Draw a closed shape on the canvas with your finger or Apple Pencil. Rough is fine — lines, arcs, and circles are recognized and cleaned up automatically.</li>
+        <li>Open the 3D view to see the profile extruded into a solid you can orbit.</li>
+        <li>Tap a face and choose <strong>Sketch on face</strong> to add material or cut into the part. Use the <strong>Union / Cut</strong> toggle to control which.</li>
+        <li>Drag a point to edit — the geometry re-solves live.</li>
+      </ol>
+
+      <h2>Tips</h2>
+      <ol>
+        <li>Apple Pencil is supported but not required.</li>
+        <li>To reach a hidden face in the 3D view, tap the same spot again to cycle to the face behind it.</li>
+        <li>Your work stays on your device — there is no account to set up.</li>
+      </ol>
+
+      <h2>In ChatGPT, Codex and Claude</h2>
+      <ol>
+        <li>Ask for a part in plain words: "draw a 60 by 30 mm L-bracket, 5 mm thick, with three M4 holes". It opens in the editor, where you can drag points and set dimensions.</li>
+        <li>Ask for changes the same way: "make it 95 mm wide", "add a hole 8 mm in from each corner". The assistant edits the sketch you have open.</li>
+        <li>If the editor area shows "CADSketch didn't load here", use the button to open it in a browser tab, and send us the short code shown in brackets.</li>
+      </ol>
+
+      <h2>Contact</h2>
+      <p>Need help or found a bug? Email us and we'll get back to you.</p>
+      <p class="contact"><a href="mailto:support@cadsketch.ai">support@cadsketch.ai</a></p>
+
+      <a class="back" href="/">← cadsketch.ai</a>
+    </div>
+  </div>
+  <!-- Cloudflare Web Analytics: cookieless visit counts. Web only; the iOS app has none. --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "2f2d9eaebfd845cc8366ce51693ad086"}'></script>
+</body>
+</html>
